@@ -1,0 +1,1178 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Class Snapshot Dashboard | Dixons Unity Academy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet" />
+  <style>
+    /* CSS_INLINE_PLACEHOLDER */
+  </style>
+</head>
+<body>
+  <!-- Privacy Login Screen -->
+  <div class="login-wrapper" id="login-screen" style="display: none;">
+    <div class="login-split-container">
+      
+      <!-- Left Welcome Panel -->
+      <div class="login-welcome-panel">
+        <div class="animated-bg-shapes" aria-hidden="true">
+          <div class="shape shape-1"></div>
+          <div class="shape shape-2"></div>
+          <div class="shape shape-3"></div>
+          <div class="shape shape-4"></div>
+        </div>
+        
+        <div class="welcome-content">
+          <div class="welcome-brand-badge">
+            <span class="welcome-badge-icon">⚙️</span>
+            <span>DIXONS ACADEMIES TRUST</span>
+          </div>
+
+          <h1 class="welcome-title">Class Snapshot Dashboard</h1>
+          <p class="welcome-subtitle">Dixons Unity Academy · Heads of Department</p>
+
+          <div class="welcome-highlights">
+            <div class="highlight-item">
+              <div class="highlight-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 20V10M12 20V4M6 20v-6"></path>
+                </svg>
+              </div>
+              <div class="highlight-text">Class and cohort analysis: mock exam attainment and progress</div>
+            </div>
+
+            <div class="highlight-item">
+              <div class="highlight-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              </div>
+              <div class="highlight-text">Question and topic diagnostics: identify gaps and strengths</div>
+            </div>
+
+            <div class="highlight-item">
+              <div class="highlight-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+              </div>
+              <div class="highlight-text">Targeted interventions: data-driven priorities for department teams</div>
+            </div>
+          </div>
+          
+          <div class="welcome-footer-tag">
+            <span>Integrity • Resilience • Respect</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Login Card Panel -->
+      <div class="login-form-panel">
+        <div class="login-card">
+          <div class="login-card-header">
+            <div class="login-crest" aria-hidden="true">
+              <svg viewBox="0 0 36 36" fill="currentColor" width="32" height="32">
+                <circle cx="14" cy="14" r="8" fill="none" stroke="currentColor" stroke-width="2.5" stroke-dasharray="3 1.5"/>
+                <circle cx="14" cy="14" r="3.5" fill="currentColor"/>
+                <circle cx="22" cy="22" r="8" fill="none" stroke="currentColor" stroke-width="2.5" stroke-dasharray="3 1.5"/>
+                <circle cx="22" cy="22" r="3.5" fill="currentColor"/>
+              </svg>
+            </div>
+            <h2 class="login-card-title">Sign in</h2>
+            <p class="login-card-sub">Access the Class Snapshot Dashboard</p>
+          </div>
+
+          <form id="login-form" novalidate>
+            <div id="login-error-alert" class="login-alert-error" style="display: none;" role="alert">
+              Username or password not recognised.
+            </div>
+
+            <div class="login-field-group">
+              <label for="login-username">Username</label>
+              <div class="input-container">
+                <input
+                  type="text"
+                  id="login-username"
+                  name="username"
+                  autocomplete="username"
+                  placeholder="Enter username"
+                  required
+                  spellcheck="false"
+                  autocapitalize="none"
+                />
+              </div>
+            </div>
+
+            <div class="login-field-group">
+              <label for="login-password">Password</label>
+              <div class="input-container password-container">
+                <input
+                  type="password"
+                  id="login-password"
+                  name="password"
+                  autocomplete="current-password"
+                  placeholder="Enter password"
+                  required
+                />
+                <button
+                  type="button"
+                  id="btn-toggle-password"
+                  class="btn-toggle-pwd"
+                  aria-label="Show password"
+                  title="Show or hide password"
+                >
+                  <svg id="eye-icon-show" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                  <svg id="eye-icon-hide" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <button type="submit" id="btn-login-submit" class="btn-signin">
+              Sign in
+            </button>
+          </form>
+
+          <div class="login-privacy-badge">
+            <span class="privacy-lock-icon" aria-hidden="true">🔒</span>
+            <span>Private: your data is processed in this browser and never uploaded.</span>
+          </div>
+
+          <div class="login-card-footer">
+            <span>For authorised staff only.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Institutional Trust Bar -->
+  <div class="trust-top-bar" id="trust-bar">
+    <div class="trust-bar-container">
+      <div class="trust-bar-brand">
+        <span class="trust-badge-cogs">⚙️</span>
+        <span class="trust-name">DIXONS ACADEMIES TRUST</span>
+        <span class="trust-divider">•</span>
+        <span class="trust-location">LEEDS</span>
+      </div>
+      <div class="trust-bar-values">
+        <span class="value-item">Integrity</span>
+        <span class="val-dot">•</span>
+        <span class="value-item">Resilience</span>
+        <span class="val-dot">•</span>
+        <span class="value-item">Respect</span>
+      </div>
+      <div class="trust-bar-status">
+        <span class="badge-offline" title="All processing happens entirely in your local browser. Zero server calls.">
+          <span class="badge-offline-dot"></span> 100% Offline &amp; Private
+        </span>
+        <button type="button" class="trust-bar-logout-btn" id="btn-trust-logout" title="Log out">
+          Log out
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="container" id="app-root">
+    
+    <!-- Academy Masthead Header -->
+    <header class="app-header" id="header-section">
+      <div class="app-brand-lockup">
+        <div class="academy-crest" aria-hidden="true">
+          <svg viewBox="0 0 36 36" fill="currentColor" width="36" height="36">
+            <circle cx="14" cy="14" r="8" fill="none" stroke="currentColor" stroke-width="2.5" stroke-dasharray="3 1.5"/>
+            <circle cx="14" cy="14" r="3.5" fill="currentColor"/>
+            <circle cx="22" cy="22" r="8" fill="none" stroke="currentColor" stroke-width="2.5" stroke-dasharray="3 1.5"/>
+            <circle cx="22" cy="22" r="3.5" fill="currentColor"/>
+          </svg>
+        </div>
+        <div class="app-title-group">
+          <div class="academy-eyebrow">DIXONS UNITY ACADEMY</div>
+          <h1>Class Snapshot Dashboard</h1>
+          <p>Private, browser only class and cohort analysis for Heads of Department</p>
+          <div class="header-snapshot-banner" id="header-snapshot-banner" style="display: none;">
+            <span class="header-snapshot-label">Snapshot Name:</span>
+            <span class="header-snapshot-name" id="header-snapshot-name"></span>
+          </div>
+        </div>
+      </div>
+      <div class="header-academic-pill">
+        <span class="academic-year-tag" id="snapshot-title-badge">Head of Department Hub</span>
+      </div>
+    </header>
+
+    <!-- Upload & Drop Zone -->
+    <section class="dropzone-container" id="dropzone" aria-label="Drop zone for mock snapshot spreadsheet">
+      <div class="dropzone-icon">📁</div>
+      <div class="dropzone-title">Drag and drop your mock snapshot .xlsx or .csv export here</div>
+      <div class="dropzone-sub">or browse your files to load the spreadsheet</div>
+      <input type="file" id="file-input" accept=".xlsx, .xls, .csv" style="display: none;" />
+      <div>
+        <button type="button" class="btn-upload" id="btn-browse">Choose File</button>
+      </div>
+      <div id="upload-error" style="color: var(--color-red); margin-top: 14px; font-size: 13px; display: none;"></div>
+    </section>
+
+    <!-- Optional New Classes Panel -->
+    <section class="new-classes-panel" id="panel-new-classes" aria-label="Are students in new classes?">
+      <div class="new-classes-header">
+        <div class="new-classes-title-group">
+          <div class="new-classes-icon" aria-hidden="true">👥</div>
+          <div>
+            <h3 class="new-classes-title">Are students in new classes?</h3>
+            <p class="new-classes-subtitle">Optionally match students against upcoming Year 11 class lists</p>
+          </div>
+        </div>
+        <div class="new-classes-choice-group" role="group" aria-label="Are students in new classes options">
+          <button type="button" class="btn-choice-pill active" id="btn-new-classes-no" aria-pressed="true">No</button>
+          <button type="button" class="btn-choice-pill" id="btn-new-classes-yes" aria-pressed="false">Yes</button>
+        </div>
+      </div>
+
+      <!-- Upload Section: Visible when Yes is chosen -->
+      <div id="new-classes-upload-section" style="display: none;">
+        <div class="new-classes-subbox" id="dropzone-class-lists">
+          <div style="font-size: 24px; margin-bottom: 4px;" aria-hidden="true">📂</div>
+          <div class="new-classes-upload-heading">Upload the new class lists</div>
+          <p class="new-classes-upload-desc">
+            Upload several files at once (e.g. one file per class: <em>Year 11 SP1.xlsx</em>) or one file containing a <em>Class</em> column.
+          </p>
+          <input type="file" id="class-lists-input" accept=".xlsx, .xls, .csv" multiple style="display: none;" />
+          <div style="margin-top: 10px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+            <button type="button" class="btn-upload" id="btn-browse-class-lists" style="padding: 7px 18px; font-size: 13px;">Choose Files</button>
+            <button type="button" class="btn-secondary-action" id="btn-clear-class-lists" style="display: none; padding: 7px 14px; font-size: 13px;">Remove Class Lists</button>
+          </div>
+          <div id="class-lists-error" style="color: var(--color-red); margin-top: 10px; font-size: 12.5px; display: none;"></div>
+        </div>
+
+        <!-- Editable Class Names Staging Box (shows before confirming) -->
+        <div id="staged-class-lists-wrapper" style="display: none;">
+          <!-- Dynamically filled with each class name in an editable box -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Diagnostics Panel -->
+    <section class="diagnostic-panel-container" id="diagnostics-panel" style="display: none;" aria-label="Snapshot data diagnostics">
+      <div class="diagnostic-header">
+        <div class="diagnostic-title-group">
+          <h2>
+            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-dark-green);">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+              <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+            Data Diagnostics
+          </h2>
+          <p id="diagnostics-file-sub">Snapshot validation and data quality summary</p>
+        </div>
+        <div id="diagnostics-status-badge"></div>
+      </div>
+      <div id="diagnostics-content"></div>
+    </section>
+
+    <!-- Main Dashboard Views -->
+    <main id="dashboard-content">
+      
+      <!-- Running Header for Print -->
+      <div class="print-only print-running-head" id="print-running-head">
+        <span class="print-running-title">Class Snapshot Report · <span id="print-running-period">Mock Snapshot</span></span>
+        <span class="print-running-school">Dixons Unity Academy</span>
+      </div>
+
+      <!-- PRINT ONLY: 1. COVER PAGE -->
+      <section class="print-only print-cover-page" id="print-cover-page">
+        <div class="print-cover-top">
+          <div class="print-cover-crest-row">
+            <svg viewBox="0 0 36 36" fill="currentColor" width="40" height="40" style="color: #2e6930;">
+              <circle cx="14" cy="14" r="8" fill="none" stroke="currentColor" stroke-width="2.5" stroke-dasharray="3 1.5"/>
+              <circle cx="14" cy="14" r="3.5" fill="currentColor"/>
+              <circle cx="22" cy="22" r="8" fill="none" stroke="currentColor" stroke-width="2.5" stroke-dasharray="3 1.5"/>
+              <circle cx="22" cy="22" r="3.5" fill="currentColor"/>
+            </svg>
+            <div class="print-cover-trust-tag">DIXONS ACADEMIES TRUST</div>
+          </div>
+          
+          <div class="print-cover-hero">
+            <h1 class="print-cover-title">Class Snapshot Report</h1>
+            <p class="print-cover-subtitle">Dixons Unity Academy · Heads of Department</p>
+            <div class="print-cover-period-badge" id="print-cover-period">Mock Snapshot Analysis</div>
+          </div>
+
+          <div class="print-cover-meta-card">
+            <div class="print-cover-meta-row">
+              <span class="print-meta-label">Filters applied:</span>
+              <span class="print-meta-value" id="print-cover-filters">All classes</span>
+            </div>
+            <div class="print-cover-meta-row">
+              <span class="print-meta-label">Prepared on:</span>
+              <span class="print-meta-value" id="print-cover-date">--</span>
+            </div>
+            <div class="print-cover-meta-row">
+              <span class="print-meta-label">Privacy status:</span>
+              <span class="print-meta-value" id="print-cover-privacy">Standard identifiers</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="print-cover-footer">
+          <div class="print-cover-footer-text">Confidential: contains student assessment data.</div>
+          <div class="print-cover-footer-brand">Dixons Unity Academy · Heads of Department</div>
+        </div>
+      </section>
+
+      <!-- PRINT ONLY: 2. CONTENTS PAGE -->
+      <section class="print-only print-contents-page" id="print-contents-page">
+        <div class="print-contents-header">
+          <div class="print-contents-eyebrow">DIXONS UNITY ACADEMY</div>
+          <h2 class="print-contents-title">Contents</h2>
+          <div class="print-contents-subtitle">Included sections in this report</div>
+        </div>
+        <ol class="print-contents-list" id="print-contents-list">
+          <li>Headline Summary</li>
+          <li>Class Snapshot Overview</li>
+        </ol>
+        <div class="print-contents-footer">
+          <span>Class Snapshot Report</span>
+          <span>Confidential</span>
+        </div>
+      </section>
+
+      <!-- Action Toolbar -->
+      <div class="action-toolbar" id="action-toolbar">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+          <button type="button" class="btn-primary-action" id="btn-export-pdf" title="Export PDF report">
+            📄 Export PDF
+          </button>
+          <button type="button" class="btn-primary-action" id="btn-export-pptx" title="Export PowerPoint presentation (.pptx)">
+            📊 Export PowerPoint
+          </button>
+          <button type="button" class="btn-secondary-action" id="btn-quick-toggle-hide-names" title="Toggle student name privacy">
+            👁️ Hide names: Off
+          </button>
+          <button type="button" class="btn-secondary-action" id="btn-open-settings" title="Settings">
+            ⚙️ Settings
+          </button>
+          <button type="button" class="btn-secondary-action btn-logout-action" id="btn-logout" title="Log out">
+            🔒 Log out
+          </button>
+        </div>
+        <div style="font-size: 13px; color: var(--text-muted);" id="file-info-label"></div>
+      </div>
+
+      <!-- VIEW SWITCH: Group by Current classes (Year 10) | New classes (Year 11) -->
+      <section class="view-switch-panel" id="view-switch-container" style="display: none;" aria-label="Class view grouping">
+        <div class="view-switch-inner">
+          <span class="view-switch-label">Group by:</span>
+          <div class="view-switch-segmented" role="radiogroup" aria-label="Group by class grouping">
+            <button type="button" id="btn-group-current" class="view-switch-btn" role="radio" aria-checked="false">
+              Current classes (Year 10)
+            </button>
+            <button type="button" id="btn-group-new" class="view-switch-btn active" role="radio" aria-checked="true">
+              New classes (Year 11)
+            </button>
+          </div>
+          <span class="view-switch-hint" id="view-switch-hint">All sections, charts, and tables are grouped by New classes (Year 11).</span>
+        </div>
+      </section>
+
+      <!-- TWO LISTS: Always visible when class lists are loaded -->
+      <section class="section-block" id="section-class-mismatch-lists" style="display: none;" aria-label="Class list allocation status">
+        <div class="overview-section-header" style="margin-bottom: 14px;">
+          <div class="overview-title-group">
+            <h3 style="font-size: 17px; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+              <span>📋</span> Class Allocation &amp; Results Status
+            </h3>
+            <p style="font-size: 13px; color: var(--text-muted); margin-top: 2px;">
+              Comparison between students in the mock snapshot and students in the new Year 11 class lists
+            </p>
+          </div>
+        </div>
+
+        <div class="mismatch-lists-grid">
+          <!-- List 1: In new classes, no mock result (by new class) -->
+          <div class="mismatch-card">
+            <div class="mismatch-card-header mismatch-header-amber">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span>⚠️</span>
+                <strong>In new classes, no mock result</strong>
+              </div>
+              <span class="mismatch-count-badge" id="badge-no-mock-count">0</span>
+            </div>
+            <div class="mismatch-card-body" id="container-new-classes-no-mock">
+              <!-- Rendered dynamically by new class -->
+            </div>
+          </div>
+
+          <!-- List 2: In the snapshot, not in any new class -->
+          <div class="mismatch-card">
+            <div class="mismatch-card-header mismatch-header-purple">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span>ℹ️</span>
+                <strong>In the snapshot, not in any new class</strong>
+              </div>
+              <span class="mismatch-count-badge" id="badge-snapshot-not-new-count">0</span>
+            </div>
+            <div class="mismatch-card-body" id="container-snapshot-not-in-new">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- One Card: Upload a mock snapshot to begin. -->
+      <section class="stat-card" id="dashboard-empty-card" style="text-align: center; padding: 54px 24px; margin-top: 24px;">
+        <div style="font-size: 38px; margin-bottom: 14px;" aria-hidden="true">📊</div>
+        <h2 style="font-size: 20px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px;">Upload a mock snapshot to begin.</h2>
+        <p style="font-size: 14px; color: var(--text-muted); max-width: 480px; margin: 0 auto; line-height: 1.5;">Select or drag and drop a mock exam spreadsheet above to analyse class and cohort performance.</p>
+      </section>
+
+      <!-- SECTION 1: Overview and Class Comparison -->
+      <section id="section-overview" class="section-block" style="display: none;" aria-label="Overview and class comparison">
+        
+        <!-- Section Header with Rank Classes Control -->
+        <div class="overview-section-header">
+          <div class="overview-title-group">
+            <h2>
+              <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: var(--brand-green);">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+              </svg>
+              Overview and class comparison
+            </h2>
+            <p>Teaching group performance and cohort benchmarks from the active snapshot</p>
+          </div>
+
+          <div class="rank-control-wrapper">
+            <label for="rank-classes-select" class="rank-control-label">Rank classes by:</label>
+            <select id="rank-classes-select" class="rank-classes-select" aria-label="Rank classes by">
+              <option value="average-grade">Average grade (points)</option>
+              <option value="pct-5-plus">% Grade 5+</option>
+              <option value="avg-progress">Average progress</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Headline Cards -->
+        <div class="overview-headline-grid" id="overview-headline-cards">
+          <!-- 1. Students -->
+          <div class="overview-stat-card">
+            <div class="overview-stat-title">Students</div>
+            <div class="overview-stat-val" id="hl-students">0</div>
+            <div class="overview-stat-sub">Total in snapshot</div>
+          </div>
+
+          <!-- 2. Average Grade (Points) -->
+          <div class="overview-stat-card">
+            <div class="overview-stat-title">Average Grade</div>
+            <div class="overview-stat-val" id="hl-avg-grade" style="color: var(--brand-green);">-</div>
+            <div class="overview-stat-sub">Points (sat entries)</div>
+          </div>
+
+          <!-- 3. % Grade 5+ -->
+          <div class="overview-stat-card">
+            <div class="overview-stat-title">% Grade 5+</div>
+            <div class="overview-stat-val" id="hl-pct-5plus">-</div>
+            <div class="overview-stat-sub">Strong pass benchmark</div>
+          </div>
+
+          <!-- 4. % Grade 4+ -->
+          <div class="overview-stat-card">
+            <div class="overview-stat-title">% Grade 4+</div>
+            <div class="overview-stat-val" id="hl-pct-4plus">-</div>
+            <div class="overview-stat-sub">Standard pass benchmark</div>
+          </div>
+
+          <!-- 5. % Grade 7+ -->
+          <div class="overview-stat-card">
+            <div class="overview-stat-title">% Grade 7+</div>
+            <div class="overview-stat-val" id="hl-pct-7plus">-</div>
+            <div class="overview-stat-sub">Top grades benchmark</div>
+          </div>
+
+          <!-- 6. Number of U Grades -->
+          <div class="overview-stat-card">
+            <div class="overview-stat-title">U Grades</div>
+            <div class="overview-stat-val" id="hl-u-count">-</div>
+            <div class="overview-stat-sub">Points = 0</div>
+          </div>
+
+          <!-- 7. Average Progress (students with estimate only) -->
+          <div class="overview-stat-card">
+            <div class="overview-stat-title">Average Progress</div>
+            <div class="overview-stat-val" id="hl-avg-progress">-</div>
+            <div class="overview-stat-sub" id="hl-progress-count">Students with estimate only</div>
+          </div>
+        </div>
+
+        <!-- Class Comparison Table Card -->
+        <div class="table-card-wrapper">
+          <div class="table-header-bar">
+            <div class="table-header-title">
+              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: var(--brand-green);">
+                <line x1="8" y1="6" x2="21" y2="6"></line>
+                <line x1="8" y1="12" x2="21" y2="12"></line>
+                <line x1="8" y1="18" x2="21" y2="18"></line>
+                <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                <line x1="3" y1="18" x2="3.01" y2="18"></line>
+              </svg>
+              Class Comparison
+            </div>
+            <div class="table-header-legend">
+              <span class="legend-badge">
+                <span class="legend-swatch highest"></span>
+                Highest class value
+              </span>
+              <span class="legend-badge">
+                <span class="legend-swatch lowest"></span>
+                Lowest class value
+              </span>
+              <span style="color: var(--text-muted); font-size: 11.5px;">Click column headers to sort</span>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="comparison-table" id="class-comparison-table">
+              <thead>
+                <tr id="comparison-table-head-row">
+                  <th data-sort-key="className" title="Click to sort by class name">
+                    Class <span class="sort-indicator">↕</span>
+                  </th>
+                  <th data-sort-key="students" title="Click to sort by student count">
+                    Students <span class="sort-indicator">↕</span>
+                  </th>
+                  <th data-sort-key="averageGrade" title="Click to sort by average grade points">
+                    Avg Grade <span class="sort-indicator">↕</span>
+                  </th>
+                  <th data-sort-key="medianGrade" title="Click to sort by median grade">
+                    Median Grade <span class="sort-indicator">↕</span>
+                  </th>
+                  <th data-sort-key="pct5Plus" title="Click to sort by % Grade 5+">
+                    % 5+ <span class="sort-indicator">↕</span>
+                  </th>
+                  <th data-sort-key="pct4Plus" title="Click to sort by % Grade 4+">
+                    % 4+ <span class="sort-indicator">↕</span>
+                  </th>
+                  <th data-sort-key="pct7Plus" title="Click to sort by % Grade 7+">
+                    % 7+ <span class="sort-indicator">↕</span>
+                  </th>
+                  <th data-sort-key="uCount" title="Click to sort by number of U grades">
+                    U Count <span class="sort-indicator">↕</span>
+                  </th>
+                  <th data-sort-key="averageProgress" title="Click to sort by average progress">
+                    Avg Progress (n) <span class="sort-indicator">↕</span>
+                  </th>
+                  <th data-sort-key="pctSENSupport" title="Click to sort by % SEN Support">
+                    % SEN Support <span class="sort-indicator">↕</span>
+                  </th>
+                  <th data-sort-key="pctDisadvantaged" title="Click to sort by % Disadvantaged">
+                    % Disadvantaged <span class="sort-indicator">↕</span>
+                  </th>
+                  <th data-sort-key="averageAttendance" title="Click to sort by average attendance">
+                    Avg Attendance <span class="sort-indicator">↕</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody id="comparison-table-body">
+                <!-- Class and Cohort Rows dynamically generated here -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Charts Grid -->
+        <div class="charts-grid">
+          
+          <!-- Chart 1: Average Grade by Class -->
+          <div class="chart-card">
+            <div class="chart-card-header">
+              <div>
+                <div class="chart-card-title">
+                  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: var(--brand-green);">
+                    <line x1="18" y1="20" x2="18" y2="10"></line>
+                    <line x1="12" y1="20" x2="12" y2="4"></line>
+                    <line x1="6" y1="20" x2="6" y2="14"></line>
+                  </svg>
+                  Average Grade by Class
+                </div>
+                <div class="chart-card-sub" id="chart-avg-grade-sub">Points average (scale 0–9) · Dashed line indicates cohort average</div>
+              </div>
+            </div>
+            
+            <div class="bar-chart-list" id="chart-avg-grade-bars">
+              <!-- Rendered via JavaScript -->
+            </div>
+            <div class="chart-scale-labels">
+              <span>0</span>
+              <span>2</span>
+              <span>4 (Std)</span>
+              <span>5 (Strong)</span>
+              <span>7</span>
+              <span>9</span>
+            </div>
+          </div>
+
+          <!-- Chart 2: Grade Distribution by Class (U, 1 to 9) -->
+          <div class="chart-card">
+            <div class="chart-card-header">
+              <div>
+                <div class="chart-card-title">
+                  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: var(--brand-green);">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="3" y1="9" x2="21" y2="9"></line>
+                    <line x1="9" y1="21" x2="9" y2="9"></line>
+                  </svg>
+                  Grade Distribution by Class
+                </div>
+                <div class="chart-card-sub">Proportion of grades achieved (U, 1 to 9)</div>
+              </div>
+            </div>
+
+            <div class="stacked-chart-list" id="chart-grade-dist-bars">
+              <!-- Rendered via JavaScript -->
+            </div>
+
+            <!-- Grade Color Swatch Legend -->
+            <div class="grade-legend" id="grade-legend-row" aria-label="GCSE Grade Legend">
+              <span class="grade-legend-item"><span class="grade-legend-swatch" style="background:#dc2626;"></span> U</span>
+              <span class="grade-legend-item"><span class="grade-legend-swatch" style="background:#ea580c;"></span> 1</span>
+              <span class="grade-legend-item"><span class="grade-legend-swatch" style="background:#f97316;"></span> 2</span>
+              <span class="grade-legend-item"><span class="grade-legend-swatch" style="background:#f59e0b;"></span> 3</span>
+              <span class="grade-legend-item"><span class="grade-legend-swatch" style="background:#eab308;"></span> 4</span>
+              <span class="grade-legend-item"><span class="grade-legend-swatch" style="background:#84cc16;"></span> 5</span>
+              <span class="grade-legend-item"><span class="grade-legend-swatch" style="background:#22c55e;"></span> 6</span>
+              <span class="grade-legend-item"><span class="grade-legend-swatch" style="background:#16a34a;"></span> 7</span>
+              <span class="grade-legend-item"><span class="grade-legend-swatch" style="background:#15803d;"></span> 8</span>
+              <span class="grade-legend-item"><span class="grade-legend-swatch" style="background:#2e6930;"></span> 9</span>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+      <!-- SECTION 2: Distance from grade 5 -->
+      <section id="section-distance-grade-5" class="section-block" style="display: none;" aria-label="Distance from grade 5">
+
+        <!-- Section Header -->
+        <div class="distance-section-header">
+          <div class="distance-title-group">
+            <h2>
+              <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: var(--brand-green);">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+              Distance from grade 5
+            </h2>
+            <p>Analysis of student performance relative to the GCSE Grade 5 Strong Pass benchmark (Gap = 5 − points; U counts as 0; students at 5+ have gap 0)</p>
+          </div>
+
+          <!-- Band Legend Explanatory Pills -->
+          <div class="distance-bands-legend" aria-label="Distance Bands">
+            <span class="dist-band-pill band-at-above-5" title="Grade 5 to 9: Benchmark achieved (gap = 0)">
+              <span class="band-pill-dot"></span> At or above 5
+            </span>
+            <span class="dist-band-pill band-one-away" title="Grade 4: Exactly 1 grade away (gap = 1)">
+              <span class="band-pill-dot"></span> One grade away (grade 4)
+            </span>
+            <span class="dist-band-pill band-two-away" title="Grade 3: Exactly 2 grades away (gap = 2)">
+              <span class="band-pill-dot"></span> Two grades away (grade 3)
+            </span>
+            <span class="dist-band-pill band-three-plus-away" title="Grade 2, 1 or U: 3 or more grades away (gap ≥ 3)">
+              <span class="band-pill-dot"></span> Three or more away (grade 2, 1 or U)
+            </span>
+          </div>
+        </div>
+
+        <!-- Section Filter Controls Bar -->
+        <div class="distance-filter-bar">
+          <div class="filter-controls-row">
+            <!-- Filter 1: Class -->
+            <div class="filter-field">
+              <label for="dist-filter-class" class="filter-label">Class</label>
+              <select id="dist-filter-class" class="filter-select" aria-label="Filter by class">
+                <option value="ALL">All classes</option>
+              </select>
+            </div>
+
+            <!-- Filter 2: SEN -->
+            <div class="filter-field">
+              <label for="dist-filter-sen" class="filter-label">SEN</label>
+              <select id="dist-filter-sen" class="filter-select" aria-label="Filter by SEN status">
+                <option value="ALL">All SEN statuses</option>
+                <option value="No SEN">No SEN</option>
+                <option value="SEN Support">SEN Support</option>
+                <option value="EHCP">EHCP</option>
+                <option value="ALL_SEN">All SEN (Support / EHCP)</option>
+              </select>
+            </div>
+
+            <!-- Filter 3: Disadvantaged -->
+            <div class="filter-field">
+              <label for="dist-filter-disadvantaged" class="filter-label">Disadvantaged</label>
+              <select id="dist-filter-disadvantaged" class="filter-select" aria-label="Filter by Disadvantaged status">
+                <option value="ALL">All students</option>
+                <option value="Yes">Disadvantaged (Yes)</option>
+                <option value="No">Not Disadvantaged (No)</option>
+              </select>
+            </div>
+
+            <!-- Filter 4: Band -->
+            <div class="filter-field">
+              <label for="dist-filter-band" class="filter-label">Band</label>
+              <select id="dist-filter-band" class="filter-select" aria-label="Filter by distance band">
+                <option value="ALL">All bands</option>
+                <option value="at_or_above_5">At or above 5</option>
+                <option value="one_grade_away">One grade away (grade 4)</option>
+                <option value="two_grades_away">Two grades away (grade 3)</option>
+                <option value="three_or_more_away">Three or more away (grade 2, 1 or U)</option>
+              </select>
+            </div>
+
+            <!-- Reset Filters & Count Status -->
+            <div class="filter-actions-group">
+              <button type="button" class="btn-reset-filters" id="btn-dist-reset-filters" title="Reset all section filters">
+                ↺ Reset
+              </button>
+              <span class="filter-count-badge" id="dist-filter-count-badge">Showing 0 students</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 1. Table by Class -->
+        <div class="table-card-wrapper" style="margin-top: 18px;">
+          <div class="table-header-bar">
+            <div>
+              <div class="table-header-title">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: var(--brand-green);">
+                  <line x1="18" y1="20" x2="18" y2="10"></line>
+                  <line x1="12" y1="20" x2="12" y2="4"></line>
+                  <line x1="6" y1="20" x2="6" y2="14"></line>
+                </svg>
+                Distance from Grade 5 by Class
+              </div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                Count and % in each band, plus average gap for students below Grade 5. The teaching class with the highest average gap is highlighted.
+              </div>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="comparison-table" id="table-distance-by-class">
+              <thead>
+                <tr>
+                  <th style="text-align: left;">Class</th>
+                  <th>Sat</th>
+                  <th>At or above 5</th>
+                  <th>One grade away (grade 4)</th>
+                  <th>Two grades away (grade 3)</th>
+                  <th>Three or more away</th>
+                  <th>Avg gap (below 5)</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-distance-by-class">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 2. "Farthest from grade 5" -->
+        <div class="table-card-wrapper" style="margin-top: 24px;">
+          <div class="table-header-bar">
+            <div>
+              <div class="table-header-title" style="color: #991b1b;">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: #dc2626;">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                </svg>
+                Farthest from grade 5
+              </div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                Student list sorted by gap to Grade 5, largest gap first (U = gap 5, grade 1 = gap 4, grade 2 = gap 3).
+              </div>
+            </div>
+            <div id="farthest-count-badge" class="table-count-tag">0 students</div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="comparison-table student-detail-table" id="table-farthest">
+              <thead>
+                <tr>
+                  <th style="text-align: left;">Name</th>
+                  <th style="text-align: left;">Class</th>
+                  <th>Result</th>
+                  <th>Estimate</th>
+                  <th>Gap</th>
+                  <th>SEN</th>
+                  <th>Disadvantaged</th>
+                  <th>Attendance</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-farthest">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 3. "Closest to grade 5" (All Grade 4 Students, by Class) -->
+        <div class="table-card-wrapper" style="margin-top: 24px;">
+          <div class="table-header-bar">
+            <div>
+              <div class="table-header-title" style="color: #b45309;">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: #d97706;">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                Closest to grade 5 (Grade 4 cusp students, by class)
+              </div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                All Grade 4 students grouped by class. Exactly 1 grade away from Grade 5 Strong Pass — primary tier for rapid impact.
+              </div>
+            </div>
+            <div id="closest-count-badge" class="table-count-tag">0 students</div>
+          </div>
+
+          <div id="closest-classes-container" class="closest-classes-list">
+            <!-- Grouped by Class dynamically -->
+          </div>
+        </div>
+
+        <!-- 4. "Estimate says 5+, result below 5" -->
+        <div class="table-card-wrapper" style="margin-top: 24px;">
+          <div class="table-header-bar">
+            <div>
+              <div class="table-header-title" style="color: #c2410c;">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: #ea580c;">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+                Estimate says 5+, result below 5
+              </div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                Students whose prior attainment estimate is 5 or more, but whose mock result is below 5, sorted by shortfall size.
+              </div>
+            </div>
+            <div id="shortfall-count-badge" class="table-count-tag">0 students</div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="comparison-table student-detail-table" id="table-estimate-shortfall">
+              <thead>
+                <tr>
+                  <th style="text-align: left;">Name</th>
+                  <th style="text-align: left;">Class</th>
+                  <th>Result</th>
+                  <th>Estimate</th>
+                  <th>Shortfall</th>
+                  <th>Gap to 5</th>
+                  <th>SEN</th>
+                  <th>Disadvantaged</th>
+                  <th>Attendance</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-estimate-shortfall">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- SECTION 3: Student groups -->
+      <section id="section-student-groups" class="section-block" style="display: none;" aria-label="Student groups">
+
+        <!-- Section Header -->
+        <div class="distance-section-header">
+          <div class="distance-title-group">
+            <h2>
+              <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: var(--brand-green);">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+              Student groups
+            </h2>
+            <p>Demographic and contextual group analysis, gap against cohort rest, class breakdown, and top performers</p>
+          </div>
+        </div>
+
+        <!-- 1. Cohort-Level Groups Summary Table -->
+        <div class="table-card-wrapper" style="margin-top: 16px;">
+          <div class="table-header-bar">
+            <div>
+              <div class="table-header-title">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: var(--brand-green);">
+                  <line x1="18" y1="20" x2="18" y2="10"></line>
+                  <line x1="12" y1="20" x2="12" y2="4"></line>
+                  <line x1="6" y1="20" x2="6" y2="14"></line>
+                </svg>
+                Cohort Breakdown by Group
+              </div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                Performance across demographic and prior attainment groups, compared with the rest of the cohort.
+              </div>
+            </div>
+            <div id="cohort-groups-count-badge" class="table-count-tag">Cohort Summary</div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="comparison-table" id="table-cohort-student-groups">
+              <thead>
+                <tr>
+                  <th style="text-align: left;">Group</th>
+                  <th>Students</th>
+                  <th>Average Grade</th>
+                  <th>% 5+ (Strong Pass)</th>
+                  <th>Average Progress (with n)</th>
+                  <th>Gap vs Rest of Cohort</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-cohort-student-groups">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 2. Expandable Breakdown Per Class -->
+        <div class="table-card-wrapper" style="margin-top: 24px;">
+          <div class="table-header-bar">
+            <div>
+              <div class="table-header-title">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: var(--brand-green);">
+                  <rect x="3" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="14" width="7" height="7"></rect>
+                  <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+                Breakdown per Class (Expandable)
+              </div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                Expand any class to inspect group performance. Groups with fewer than 5 students show the count but grey out percentages with <em>"too few to compare"</em>.
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" class="btn-secondary-action" id="btn-expand-all-classes" style="padding: 4px 10px; font-size: 12px;">Expand all</button>
+              <button type="button" class="btn-secondary-action" id="btn-collapse-all-classes" style="padding: 4px 10px; font-size: 12px;">Collapse all</button>
+            </div>
+          </div>
+
+          <div id="classes-group-accordion-container" style="padding: 16px;">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <!-- 3. Top Performers Section -->
+        <div class="table-card-wrapper" style="margin-top: 24px;">
+          <div class="table-header-bar">
+            <div>
+              <div class="table-header-title">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: #d97706;">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                </svg>
+                Top Performers per Class
+              </div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                Top 5 by points (tie-break: higher progress), 5 biggest positive progress scores, and 5 biggest negative progress scores (students with an estimate only).
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <label for="top-performers-class-select" style="font-size: 12px; font-weight: 700; color: var(--text-secondary);">Class:</label>
+              <select id="top-performers-class-select" class="filter-select" style="font-weight: 600;">
+                <!-- Populated dynamically -->
+              </select>
+            </div>
+          </div>
+
+          <div id="top-performers-content-container" style="padding: 16px;">
+            <!-- 3 Cards: Top 5 Points, Positive Progress, Negative Progress -->
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+
+    <!-- Export PDF Options Modal Dialog -->
+    <div class="modal-overlay" id="export-pdf-modal" style="display: none;">
+      <div class="modal-dialog" style="max-width: 560px;">
+        <div class="modal-header">
+          <h3>Export PDF</h3>
+          <button type="button" class="modal-close-btn" id="btn-close-export-modal" aria-label="Close dialog">&times;</button>
+        </div>
+        <div class="modal-body" style="max-height: 75vh; overflow-y: auto; padding-right: 8px;">
+          <p style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 14px;">
+            Choose what to include, then save as PDF in the print window.
+          </p>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
+            <span style="font-weight: 700; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Sections to Include</span>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" class="btn-secondary-action" id="btn-pdf-select-all" style="padding: 3px 10px; font-size: 12px;">Select all</button>
+              <button type="button" class="btn-secondary-action" id="btn-pdf-select-none" style="padding: 3px 10px; font-size: 12px;">Select none</button>
+            </div>
+          </div>
+
+          <div class="pdf-sections-checkbox-grid" style="display: flex; flex-direction: column; gap: 7px; margin-bottom: 18px;">
+            <label class="pdf-checkbox-label">
+              <input type="checkbox" id="pdf-opt-headlines" checked />
+              <span>Headline summary</span>
+            </label>
+            <label class="pdf-checkbox-label">
+              <input type="checkbox" id="pdf-opt-overview" checked />
+              <span>Class snapshot overview</span>
+            </label>
+          </div>
+
+          <div style="border-top: 1px solid var(--border-color); padding-top: 12px; margin-bottom: 16px;">
+            <div style="font-weight: 700; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Anonymisation</div>
+            <label class="pdf-checkbox-label" style="font-weight: 600;">
+              <input type="checkbox" id="pdf-opt-hide-names" />
+              <span>Hide names</span>
+            </label>
+            <div style="font-size: 12px; color: var(--text-muted); margin-left: 24px; margin-top: 2px;">
+              Replaces student and teacher names with Student 1, 2, 3 and Teacher A, B, C.
+            </div>
+          </div>
+
+          <div style="border-top: 1px solid var(--border-color); padding-top: 12px;">
+            <div style="font-weight: 700; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Page Orientation</div>
+            <div style="display: flex; gap: 20px;">
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 13.5px; cursor: pointer;">
+                <input type="radio" name="pdf-orientation" id="pdf-orient-portrait" value="portrait" checked />
+                <span>Portrait</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 13.5px; cursor: pointer;">
+                <input type="radio" name="pdf-orientation" id="pdf-orient-landscape" value="landscape" />
+                <span>Landscape</span>
+              </label>
+            </div>
+          </div>
+
+          <div id="export-pdf-error-msg" style="display: none; background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; border-radius: 4px; padding: 8px 12px; margin-top: 14px; font-size: 13px;"></div>
+        </div>
+        <div class="modal-footer" style="justify-content: flex-end; gap: 10px;">
+          <button type="button" class="btn-secondary-action" id="btn-cancel-export-pdf">Cancel</button>
+          <button type="button" class="btn-primary-action" id="btn-create-pdf">Create PDF</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Export PowerPoint Options Modal Dialog -->
+    <div class="modal-overlay" id="export-pptx-modal" style="display: none;">
+      <div class="modal-dialog" style="max-width: 560px;">
+        <div class="modal-header">
+          <h3>Export PowerPoint</h3>
+          <button type="button" class="modal-close-btn" id="btn-close-pptx-modal" aria-label="Close dialog">&times;</button>
+        </div>
+        <div class="modal-body" style="max-height: 75vh; overflow-y: auto; padding-right: 8px;">
+          <p style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 14px;">
+            Choose slides to include, then export a native widescreen (16:9) PowerPoint presentation (.pptx).
+          </p>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
+            <span style="font-weight: 700; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Slides to Include</span>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" class="btn-secondary-action" id="btn-pptx-select-all" style="padding: 3px 10px; font-size: 12px;">Select all</button>
+              <button type="button" class="btn-secondary-action" id="btn-pptx-select-none" style="padding: 3px 10px; font-size: 12px;">Select none</button>
+            </div>
+          </div>
+
+          <div class="pptx-sections-checkbox-grid" style="display: flex; flex-direction: column; gap: 7px; margin-bottom: 18px;">
+            <label class="pdf-checkbox-label">
+              <input type="checkbox" id="pptx-opt-headlines" checked />
+              <span>Headline summary</span>
+            </label>
+          </div>
+
+          <div style="border-top: 1px solid var(--border-color); padding-top: 12px; margin-bottom: 8px;">
+            <div style="font-weight: 700; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Anonymisation</div>
+            <label class="pdf-checkbox-label" style="font-weight: 600;">
+              <input type="checkbox" id="pptx-opt-hide-names" />
+              <span>Hide names</span>
+            </label>
+            <div style="font-size: 12px; color: var(--text-muted); margin-left: 24px; margin-top: 2px;">
+              Replaces student and teacher names with Student 1, 2, 3 and Teacher A, B, C.
+            </div>
+          </div>
+
+          <div id="export-pptx-error-msg" style="display: none; background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; border-radius: 4px; padding: 8px 12px; margin-top: 14px; font-size: 13px;"></div>
+        </div>
+        <div class="modal-footer" style="justify-content: flex-end; gap: 10px;">
+          <button type="button" class="btn-secondary-action" id="btn-cancel-export-pptx">Cancel</button>
+          <button type="button" class="btn-primary-action" id="btn-create-pptx">Create PowerPoint</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Modal Dialog (Pattern kept) -->
+    <div class="modal-overlay" id="settings-modal" style="display: none;">
+      <div class="modal-dialog" style="max-width: 560px;">
+        <div class="modal-header">
+          <h3>Dashboard Settings</h3>
+          <button type="button" class="modal-close-btn" id="btn-close-settings-modal" aria-label="Close dialog">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 16px 20px;">
+          <p style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 16px;">
+            Preferences are saved locally in this browser.
+          </p>
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <label class="pdf-checkbox-label" style="font-weight: 600;">
+              <input type="checkbox" id="setting-hide-names" />
+              <span>Hide student and teacher names by default</span>
+            </label>
+            <div style="font-size: 12px; color: var(--text-muted); margin-left: 24px; margin-top: -8px;">
+              When enabled, student and teacher names will be anonymised automatically across views and exports.
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer" style="justify-content: flex-end; gap: 10px;">
+          <button type="button" class="btn-secondary-action" id="btn-cancel-settings">Cancel</button>
+          <button type="button" class="btn-primary-action" id="btn-save-settings">Save &amp; Apply</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Institutional Footer -->
+    <footer class="app-footer" id="footer-section">
+      <div class="footer-content">
+        <div class="footer-col-brand">
+          <div class="footer-academy-title">DIXONS UNITY ACADEMY</div>
+          <div class="footer-academy-sub">Whingate Road, Leeds, West Yorkshire LS12 1DS</div>
+          <div class="footer-trust-sub">Part of the Dixons Academies Trust federation of schools</div>
+        </div>
+        <div class="footer-col-security">
+          <div class="footer-sec-title">🔒 Client-Side Confidentiality &amp; GDPR</div>
+          <div class="footer-sec-text">
+            All student assessment records, mock results, and cohort analytics are processed strictly in your local browser session. No data is stored on external servers or transferred over the network.
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom-line">
+        <span>© 2026 Dixons Unity Academy • Class Snapshot Dashboard</span>
+        <span>Integrity • Resilience • Respect</span>
+      </div>
+    </footer>
+
+  </div>
+
+  <script>
+    /* JS_INLINE_PLACEHOLDER */
+  </script>
+</body>
+</html>
