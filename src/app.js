@@ -7,7 +7,7 @@
 import * as XLSX from 'xlsx';
 import { exportPowerPointPresentation } from './pptxExport.js';
 import { generateSuggestedActions } from './actions.js';
-import { PDF_SECTIONS, selectedPdfSections, setPdfSectionVisibility, livePdfFilterSummary, matrixPrintColumns, createStudentNameRedactor, qlaPrintClasses, qlaPrintTiers, heatmapPrintColumns } from './pdfExport.js';
+import { PDF_SECTIONS, selectedPdfSections, setPdfSectionVisibility, livePdfFilterSummary, describeActiveFilters, matrixPrintColumns, createStudentNameRedactor, qlaPrintClasses, qlaPrintTiers, heatmapPrintColumns } from './pdfExport.js';
 import {
   computeHeadlines,
   filterRecords,
@@ -192,6 +192,7 @@ let movementState = {
 
 // Student Groups & Top Performers State
 let selectedTopPerformersClass = null;
+let topPerformersClassChosen = false;
 
 let pdfExportOptions = {
   overview: true,
@@ -754,6 +755,7 @@ function setActiveGrouping(grouping) {
   qlaClassesState.selectedClass = null;
   qlaStudentsState.filters.className = 'ALL';
   selectedTopPerformersClass = null;
+  topPerformersClassChosen = false;
 
   // Reprocess QLA with activeGrouping if loaded
   if (currentQlaData && currentQlaData.rawSheets) {
@@ -1732,6 +1734,7 @@ function renderTopPerformers(resetSelection = false) {
 
   if (resetSelection || !selectedTopPerformersClass || !performersMap[selectedTopPerformersClass]) {
     selectedTopPerformersClass = classNames[0];
+    topPerformersClassChosen = false;
   }
   classSelect.value = selectedTopPerformersClass;
 
@@ -5385,6 +5388,7 @@ async function processFile(file) {
  */
 function updatePrintCoverAndContents() {
   const ukDateToday = formatUKDate(new Date());
+  const includedSections = selectedPdfSections(pdfExportOptions, !!classListsData, !!currentQlaData?.papers?.length);
 
   const coverPeriod = document.getElementById('print-cover-period');
   if (coverPeriod) {
@@ -5393,7 +5397,18 @@ function updatePrintCoverAndContents() {
   }
 
   const coverFilters = document.getElementById('print-cover-filters');
-  if (coverFilters) coverFilters.textContent = livePdfFilterSummary(distFilters, selectedTopPerformersClass);
+  if (coverFilters) {
+    coverFilters.textContent = describeActiveFilters({
+      grouping: activeGrouping,
+      selectedSections: Object.fromEntries(includedSections.map(section => [section.key, true])),
+      distance: distFilters,
+      studentGroups: { topPerformersClass: selectedTopPerformersClass, classChosen: topPerformersClassChosen },
+      qlaPapers: qlaTabFilters,
+      qlaQuestions: qlaQuestionsState.filters,
+      qlaClasses: { className: document.getElementById('pdf-qla-class-picker')?.value || 'ALL' },
+      qlaStudents: qlaStudentsState.filters
+    }).join('\n');
+  }
 
   const coverQla = document.getElementById('print-cover-qla-title');
   if (coverQla) {
@@ -5418,7 +5433,7 @@ function updatePrintCoverAndContents() {
   const contentsList = document.getElementById('print-contents-list');
   if (contentsList) {
     contentsList.innerHTML = '';
-    selectedPdfSections(pdfExportOptions, !!classListsData, !!currentQlaData?.papers?.length).forEach(section => {
+    includedSections.forEach(section => {
       const li = document.createElement('li');
       li.textContent = section.label;
       contentsList.appendChild(li);
@@ -6208,6 +6223,7 @@ export function initApp() {
   if (topPerfSelect) {
     topPerfSelect.addEventListener('change', (e) => {
       selectedTopPerformersClass = e.target.value;
+      topPerformersClassChosen = true;
       renderTopPerformers(false);
     });
   }

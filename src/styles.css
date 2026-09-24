@@ -2234,6 +2234,10 @@ body {
     font-weight: 500;
   }
 
+  #print-cover-filters {
+    white-space: pre-line;
+  }
+
   .print-cover-headline-box {
     border: 1.5px solid #2e6930;
     border-radius: 6px;

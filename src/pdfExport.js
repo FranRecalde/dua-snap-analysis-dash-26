@@ -71,6 +71,50 @@ export function livePdfFilterSummary(filters = {}, topPerformersClass = null) {
   return active.length ? active.join(' · ') : 'No active section filters';
 }
 
+export function describeActiveFilters({
+  grouping = 'current', selectedSections = {}, distance = {}, studentGroups = {},
+  qlaPapers = {}, qlaQuestions = {}, qlaClasses = {}, qlaStudents = {}
+} = {}) {
+  const lines = [`Grouping: ${grouping === 'new' ? 'New classes (Year 11)' : 'Current classes (Year 10)'}`];
+  const active = value => value && value !== 'ALL';
+  const labels = filters => {
+    const parts = [];
+    if (active(filters.className)) parts.push(`class ${filters.className}`);
+    if (active(filters.tier)) parts.push(`${filters.tier} tier`);
+    if (active(filters.sen)) {
+      const sen = filters.sen === 'ALL_SEN' ? 'all SEN' : filters.sen;
+      parts.push(`${sen} only`);
+    }
+    if (active(filters.disadvantaged)) {
+      parts.push(filters.disadvantaged === 'Yes' ? 'disadvantaged only' : 'not disadvantaged only');
+    }
+    if (active(filters.band)) {
+      const bands = {
+        at_or_above_5: 'at or above grade 5',
+        one_grade_away: 'one grade away (grade 4)',
+        two_grades_away: 'two grades away (grade 3)',
+        three_or_more_away: 'three or more grades away'
+      };
+      parts.push(bands[filters.band] || filters.band);
+    }
+    if (active(filters.weakestPaper)) parts.push(`weakest paper ${filters.weakestPaper}`);
+    return parts;
+  };
+  const add = (selected, title, parts) => {
+    if (selected && parts.length) lines.push(`${title}: ${parts.join(', ')}`);
+  };
+  add(selectedSections.distance, 'Distance from grade 5', labels(distance));
+  add(selectedSections.groups, 'Student groups',
+    studentGroups.classChosen && active(studentGroups.topPerformersClass)
+      ? [`top performers class ${studentGroups.topPerformersClass}`] : []);
+  add(selectedSections.qlaPapers, 'QLA Papers and skills', labels(qlaPapers));
+  add(selectedSections.qlaQuestions, 'QLA Questions', labels(qlaQuestions));
+  add(selectedSections.qlaClasses, 'QLA Classes', labels(qlaClasses));
+  add(selectedSections.qlaStudents, 'QLA Students', labels(qlaStudents));
+  if (lines.length === 1) lines.push('No filters applied');
+  return lines;
+}
+
 export function matrixPrintColumns(columnCount, columnsPerPage = 7) {
   const newClassCount = columnCount - 3;
   const chunks = [];
