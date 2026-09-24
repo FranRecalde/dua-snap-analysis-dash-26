@@ -4042,10 +4042,15 @@ body {
 
 .staged-file-info {
   font-size: 13px;
-  color: var(--text-primary);
+  color: #1c2421;
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.staged-file-count {
+  font-size: 12px;
+  color: #475569;
 }
 
 .staged-file-input-wrapper {
@@ -4057,7 +4062,7 @@ body {
 .staged-file-input-wrapper label {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: #2d3748;
 }
 
 .input-staged-class-name {
@@ -4068,7 +4073,7 @@ body {
   border-radius: 4px;
   width: 140px;
   background: #ffffff;
-  color: var(--text-primary);
+  color: #1c2421;
 }
 
 .input-staged-class-name:focus {

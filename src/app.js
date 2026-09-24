@@ -2621,13 +2621,13 @@ function renderStagedClassFiles() {
   let rowsHtml = '';
   stagedClassFiles.forEach((fileItem, idx) => {
     if (fileItem.hasClassColumn) {
-      const distinctClasses = Array.from(new Set(fileItem.students.map(s => s.newClassName).filter(Boolean)));
+      const distinctClasses = Array.from(new Set(fileItem.students.map(s => s.className).filter(Boolean)));
       rowsHtml += `
         <div class="staged-file-row">
           <div class="staged-file-info">
             <span>📄</span>
             <strong>${escapeHtml(fileItem.fileName)}</strong>
-            <span style="font-size: 12px; color: var(--text-muted);">
+            <span class="staged-file-count">
               (${fileItem.students.length} students · contains Class column: <em>${escapeHtml(distinctClasses.join(', '))}</em>)
             </span>
           </div>
@@ -2640,7 +2640,7 @@ function renderStagedClassFiles() {
           <div class="staged-file-info">
             <span>📄</span>
             <strong>${escapeHtml(fileItem.fileName)}</strong>
-            <span style="font-size: 12px; color: var(--text-muted);">(${fileItem.students.length} students)</span>
+            <span class="staged-file-count">(${fileItem.students.length} students)</span>
           </div>
           <div class="staged-file-input-wrapper">
             <label for="input-class-name-${idx}">Class name:</label>
@@ -2696,7 +2696,8 @@ function confirmAndApplyClassLists() {
       stagedClassFiles[idx].confirmedClassName = val || stagedClassFiles[idx].defaultClassName;
       // Also update students in this file
       stagedClassFiles[idx].students.forEach(st => {
-        st.newClassName = stagedClassFiles[idx].confirmedClassName;
+        st.className = stagedClassFiles[idx].confirmedClassName;
+        st.rawClass = stagedClassFiles[idx].confirmedClassName;
       });
     }
   });
@@ -2730,10 +2731,10 @@ function confirmAndApplyClassLists() {
   const clearBtn = document.getElementById('btn-clear-class-lists');
   const stagedWrapper = document.getElementById('staged-class-lists-wrapper');
 
-  btnNew?.classList.add('active');
-  btnNew?.setAttribute('aria-checked', 'true');
-  btnCurrent?.classList.remove('active');
-  btnCurrent?.setAttribute('aria-checked', 'false');
+  btnGroupNew?.classList.add('active');
+  btnGroupNew?.setAttribute('aria-checked', 'true');
+  btnGroupCurrent?.classList.remove('active');
+  btnGroupCurrent?.setAttribute('aria-checked', 'false');
   if (viewSwitchHint) {
     viewSwitchHint.textContent = 'All sections, charts, filters, and exports are grouped by New classes (Year 11).';
   }
