@@ -38,6 +38,8 @@ async function buildStandalone() {
   // 3. Inline CSS and JS into single standalone HTML file
   let finalHtml = templateHtml.replace('/* CSS_INLINE_PLACEHOLDER */', cssContent);
   finalHtml = finalHtml.replace('/* JS_INLINE_PLACEHOLDER */', bundledJs);
+  // The hosted standalone file must not request Google Fonts or any other external asset.
+  finalHtml = finalHtml.replace(/^\s*<link\b[^>]*href="https:\/\/fonts\.(?:googleapis|gstatic)\.com[^"]*"[^>]*>\s*$/gm, '');
 
   // 4. Write output to dist/
   fs.writeFileSync(outputPath, finalHtml, 'utf8');
