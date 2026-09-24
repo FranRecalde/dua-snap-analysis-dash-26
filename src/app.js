@@ -5770,16 +5770,21 @@ async function triggerPptxExport() {
   if (errorMsg) errorMsg.style.display = 'none';
 
   pptxExportOptions.headlines = !!document.getElementById('pptx-opt-headlines')?.checked;
-  pptxExportOptions.hideNames = !!document.getElementById('pptx-opt-hide-names')?.checked;
+  pptxExportOptions.hideNames = !!document.getElementById('pptx-opt-hide-names')?.checked || isNameHidden;
 
   try {
     const activeRecords = getActiveRecords();
     const fileName = await exportPowerPointPresentation({
       filteredRecords: activeRecords,
       allRecords: activeRecords,
+      distanceRecords: filterDistanceRecords(activeRecords, distFilters),
+      rawSnapshotRecords: allRecords,
+      classListsData,
+      qlaPapers: currentQlaData?.papers || null,
+      movementThresholds: movementState.thresholds,
       options: pptxExportOptions,
-      snapshotName: currentFileName || 'Mock Exam Snapshot',
-      filtersAppliedStr: `Grouped by: ${activeGrouping === 'new' ? 'New classes (Year 11)' : 'Current classes (Year 10)'}`,
+      snapshotName: currentSnapshotName || currentFileName || 'Mock Exam Snapshot',
+      filtersAppliedStr: `Grouping: ${activeGrouping === 'new' ? 'New classes (Year 11)' : 'Current classes (Year 10)'} · ${livePdfFilterSummary(distFilters, selectedTopPerformersClass)}`,
       ukDateToday: formatUKDate(new Date())
     });
 

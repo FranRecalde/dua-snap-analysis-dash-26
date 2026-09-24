@@ -5,7 +5,13 @@
  */
 
 import pptxgen from 'pptxgenjs';
-import { computeHeadlines } from './stats.js';
+import {
+  computeHeadlines, calculateClassBreakdown, calculateDistanceBreakdownByClass,
+  calculateStudentGroupsBreakdown
+} from './stats.js';
+import { calculateMovementMatrix, calculateNewClassProfiles, calculateBalanceFlags } from './movementStats.js';
+import { generateSuggestedActions } from './actions.js';
+import { createStudentNameRedactor } from './pdfExport.js';
 
 // Color Palette
 const COLORS = {
@@ -29,6 +35,41 @@ const COLORS = {
 
 const FONT_TITLE = 'Calibri';
 const FONT_BODY = 'Calibri';
+const FOOTER = 'Contains pupil data. Handle under the trust data protection policy.';
+
+function addSafeText(slide, value, x, y, w, h, options = {}) {
+  const text = String(value ?? '');
+  let size = options.fontSize || 12;
+  while (size > 7) {
+    const charsPerLine = Math.max(1, Math.floor(w * 72 / (size * 0.56)));
+    const neededLines = text.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / charsPerLine)), 0);
+    if (neededLines * size * 1.25 <= h * 72) break;
+    size--;
+  }
+  slide.addText(text, { x, y, w, h, fontFace: FONT_BODY, valign: 'mid', margin: 0, fit: 'shrink', ...options, fontSize: size });
+}
+
+function addPagedTable(pres, title, headers, rows, widths, rowsPerSlide = 10, subtitle = '') {
+  const pages = Math.max(1, Math.ceil(rows.length / rowsPerSlide));
+  for (let page = 0; page < pages; page++) {
+    const slide = pres.addSlide();
+    setupSlideHeaderAndFooter(slide, pages > 1 ? `${title} (${page + 1} of ${pages})` : title, subtitle);
+    const part = rows.slice(page * rowsPerSlide, (page + 1) * rowsPerSlide);
+    slide.addTable([headers, ...part], {
+      x: 0.8, y: 1.4, w: 8.4, h: 0.34 * (part.length + 1),
+      colW: widths, rowH: 0.34, margin: 0.035, fontFace: FONT_BODY,
+      fontSize: 9, color: COLORS.textDark,
+      border: { type: 'solid', color: COLORS.borderGray, pt: 0.5 },
+      autoPage: false,
+      bold: false,
+      fill: { color: COLORS.white }
+    });
+  }
+}
+
+function fmt(value, digits = 1, suffix = '') {
+  return value === null || value === undefined || Number.isNaN(value) ? '–' : `${Number(value).toFixed(digits)}${suffix}`;
+}
 
 /**
  * Add standard header and confidential footer to a content slide
@@ -70,35 +111,30 @@ function setupSlideHeaderAndFooter(slide, title, subtitle = '') {
   });
 
   // Standard Footer on all slides
-  slide.addText('Confidential: contains student assessment data.', {
+  slide.addText(FOOTER, {
     x: 0.8,
     y: 5.18,
-    w: 4.8,
+    w: 8.4,
     h: 0.25,
-    fontSize: 8.5,
+    fontSize: 8,
     bold: true,
     color: COLORS.ragRed,
     fontFace: FONT_BODY
   });
 
-  slide.addText('Dixons Unity Academy · Heads of Department', {
-    x: 5.6,
-    y: 5.18,
-    w: 3.6,
-    h: 0.25,
-    align: 'right',
-    fontSize: 8.5,
-    color: COLORS.textMuted,
-    fontFace: FONT_BODY
-  });
 }
 
 /**
  * Export PowerPoint Presentation
  */
-export async function exportPowerPointPresentation({
+export function buildPowerPointPresentation({
   filteredRecords = [],
   allRecords = [],
+  distanceRecords = filteredRecords,
+  classListsData = null,
+  qlaPapers = null,
+  rawSnapshotRecords = allRecords,
+  movementThresholds = {},
   options = {},
   snapshotName = 'Mock Exam Snapshot',
   filtersAppliedStr = 'All classes',
@@ -108,7 +144,14 @@ export async function exportPowerPointPresentation({
   pres.layout = 'LAYOUT_16x9';
 
   const isAnon = !!options.hideNames;
-  const headlines = computeHeadlines(filteredRecords.length > 0 ? filteredRecords : allRecords);
+  const headlines = computeHeadlines(filteredRecords);
+  const redact = isAnon ? createStudentNameRedactor([
+    ...filteredRecords,
+    ...allRecords,
+    ...(classListsData?.allNewClassStudents || []),
+    ...(classListsData?.inNewClassesNoMockResult || []),
+    ...(qlaPapers || []).flatMap(paper => paper.students || [])
+  ]) : value => String(value ?? '');
 
   // -------------------------------------------------------------
   // SLIDE 1: Title Slide
@@ -169,33 +212,25 @@ export async function exportPowerPointPresentation({
   });
 
   const privacyText = isAnon
-    ? 'Student & staff names hidden (Student 1, 2... / Teacher 1, 2...)'
+    ? 'Student initials and class'
     : 'Standard class and student identifiers';
 
-  titleSlide.addText([
-    { text: 'Snapshot Dataset:\n', options: { bold: true, fontSize: 11, color: COLORS.textMuted } },
-    { text: `${snapshotName}\n\n`, options: { bold: true, fontSize: 15, color: COLORS.darkGreen } },
-    { text: 'Filters Applied:\n', options: { bold: true, fontSize: 11, color: COLORS.textMuted } },
-    { text: `${filtersAppliedStr}\n\n`, options: { fontSize: 13, color: COLORS.textDark } },
-    { text: 'Prepared On:  ', options: { bold: true, fontSize: 11, color: COLORS.textMuted } },
-    { text: `${ukDateToday || 'Today'}     ·     `, options: { fontSize: 11, color: COLORS.textDark } },
-    { text: 'Privacy:  ', options: { bold: true, fontSize: 11, color: COLORS.textMuted } },
-    { text: `${privacyText}`, options: { fontSize: 11, color: COLORS.textDark } }
-  ], {
-    x: 1.0,
-    y: 2.8,
-    w: 8.0,
-    h: 1.6,
-    fontFace: FONT_BODY
-  });
+  addSafeText(titleSlide, 'Snapshot dataset', 1.0, 2.78, 8.0, 0.2,
+    { fontSize: 10, bold: true, color: COLORS.textMuted });
+  addSafeText(titleSlide, redact(snapshotName), 1.0, 3.0, 8.0, 0.35,
+    { fontSize: 16, bold: true, color: COLORS.darkGreen });
+  addSafeText(titleSlide, redact(filtersAppliedStr), 1.0, 3.47, 8.0, 0.5,
+    { fontSize: 12, color: COLORS.textDark });
+  addSafeText(titleSlide, `${ukDateToday || 'Today'} · ${privacyText}`, 1.0, 4.12, 8.0, 0.25,
+    { fontSize: 10, color: COLORS.textMuted });
 
   // Confidential footer
-  titleSlide.addText('Confidential: for Head of Department analysis only.', {
+  titleSlide.addText(FOOTER, {
     x: 0.8,
     y: 5.15,
     w: 8.4,
     h: 0.3,
-    fontSize: 9,
+    fontSize: 8,
     bold: true,
     color: COLORS.ragRed,
     fontFace: FONT_BODY
@@ -213,7 +248,7 @@ export async function exportPowerPointPresentation({
       { title: 'Total Assessment Entries', val: String(headlines.total), sub: 'Processed records' },
       { title: 'Classes Evaluated', val: String(headlines.classesCount), sub: 'Distinct teaching classes' },
       { title: 'Students', val: String(headlines.studentsCount), sub: 'Active cohort size' },
-      { title: 'Average Score', val: headlines.averageScore ? `${headlines.averageScore}%` : '--', sub: 'Cohort mean' }
+      { title: 'Average Grade', val: headlines.studentsCount ? fmt(headlines.averageScore) : '–', sub: 'Cohort mean' }
     ];
 
     cards.forEach((card, idx) => {
@@ -263,30 +298,138 @@ export async function exportPowerPointPresentation({
       });
     });
 
-    // Overview message
-    summarySlide.addShape('rect', {
-      x: 0.8,
-      y: 4.0,
-      w: 8.45,
-      h: 0.9,
-      fill: { color: COLORS.lightGreenTint },
-      line: { color: COLORS.borderGreen, width: 1 }
-    });
+  }
 
-    summarySlide.addText('Upload a mock snapshot to begin full class-by-class cohort diagnostic analysis.', {
-      x: 1.0,
-      y: 4.25,
-      w: 8.0,
-      h: 0.4,
-      fontSize: 12,
-      bold: true,
-      color: COLORS.darkGreen,
-      fontFace: FONT_BODY,
-      align: 'center'
+  const classes = calculateClassBreakdown(filteredRecords)
+    .sort((a, b) => a.className.localeCompare(b.className, undefined, { numeric: true }));
+  const comparisonParts = [
+    {
+      title: 'Class comparison: attainment',
+      headers: ['Class', 'Students', 'Average', 'Median', '5+ %', '4+ %', '7+ %'],
+      widths: [1.65, 0.9, 0.95, 0.9, 1.33, 1.33, 1.34],
+      cells: c => [c.className, String(c.students), fmt(c.averageGrade, 2), fmt(c.medianGrade), fmt(c.pct5Plus, 1, '%'), fmt(c.pct4Plus, 1, '%'), fmt(c.pct7Plus, 1, '%')]
+    },
+    {
+      title: 'Class comparison: progress and groups',
+      headers: ['Class', 'U', 'Progress', 'SEN Support %', 'Disadvantaged %', 'Attendance %'],
+      widths: [1.65, 0.65, 1.15, 1.65, 1.8, 1.5],
+      cells: c => [c.className, String(c.uCount), fmt(c.averageProgress, 2), fmt(c.pctSENSupport, 1, '%'), fmt(c.pctDisadvantaged, 1, '%'), fmt(c.averageAttendance, 1, '%')]
+    }
+  ];
+  comparisonParts.forEach(part => addPagedTable(pres, part.title, part.headers,
+    classes.map(c => part.cells(c).map(redact)), part.widths, 10));
+
+  const chartClasses = classes.filter(c => c.averageGrade !== null);
+  for (let start = 0; start < Math.max(1, chartClasses.length); start += 10) {
+    const part = chartClasses.slice(start, start + 10);
+    const slide = pres.addSlide();
+    setupSlideHeaderAndFooter(slide, 'Average grade by class',
+      chartClasses.length > 10 ? `Classes ${start + 1}–${start + part.length} of ${chartClasses.length}` : '');
+    if (part.length) {
+      slide.addChart(pres.ChartType.bar, [{
+        name: 'Average grade',
+        labels: part.map(c => redact(c.className)),
+        values: part.map(c => c.averageGrade)
+      }], {
+        x: 1.0, y: 1.35, w: 8.0, h: 3.55,
+        showLegend: false, showValue: true,
+        catAxisLabelFontSize: 9, valAxisLabelFontSize: 9,
+        valAxisMinVal: 0, valAxisMaxVal: 9,
+        chartColors: [COLORS.accentGreen],
+        showTitle: false, showBorder: false
+      });
+    } else {
+      addSafeText(slide, 'No results match the active filters.', 1, 2, 8, 0.6, { fontSize: 15 });
+    }
+  }
+
+  const actions = generateSuggestedActions(distanceRecords, {
+    classListsData, qlaPapers, rawSnapshotRecords, movementThresholds
+  }).topPriorities;
+  const actionCards = actions.flatMap((action, index) => {
+    const why = redact(action.why || '');
+    const parts = why ? Array.from({ length: Math.ceil(why.length / 220) }, (_, part) => why.slice(part * 220, (part + 1) * 220)) : [''];
+    return parts.map((part, partIndex) => ({ action, index, part: part.trim(), partIndex }));
+  });
+  if (!actionCards.length) actionCards.push({ action: null, index: 0, part: 'No suggested actions at the current thresholds.', partIndex: 0 });
+  for (let start = 0; start < actionCards.length; start += 2) {
+    const slide = pres.addSlide();
+    setupSlideHeaderAndFooter(slide, 'Suggested actions: Top 5',
+      actionCards.length > 2 ? `Actions ${Math.floor(start / 2) * 2 + 1}–${Math.min(start + 2, actionCards.length)} of ${actionCards.length}` : '');
+    actionCards.slice(start, start + 2).forEach((card, position) => {
+      const y = 1.45 + position * 1.7;
+      if (!card.action) {
+        addSafeText(slide, card.part, 0.9, y, 8.2, 0.5, { fontSize: 14 });
+        return;
+      }
+      addSafeText(slide, `${card.index + 1}. [${card.action.source}] ${redact(card.action.title)}${card.partIndex ? ' (continued)' : ''}`,
+        0.9, y, 8.2, 0.55, { fontSize: 15, bold: true, color: COLORS.darkGreen });
+      addSafeText(slide, card.part, 1.0, y + 0.6, 8.0, 0.85, { fontSize: 12, color: COLORS.textBody, valign: 'top' });
     });
   }
 
-  // Save / Trigger Download
+  const distance = calculateDistanceBreakdownByClass(distanceRecords).classes;
+  addPagedTable(pres, 'Distance from grade 5: band counts by class',
+    ['Class', 'Sat', '5+', '1 away', '2 away', '3+ away'],
+    distance.map(c => [c.className, c.satCount, c.countAtOrAbove5, c.countOneAway, c.countTwoAway, c.countThreeOrMoreAway].map(String)),
+    [2.4, 1.2, 1.2, 1.2, 1.2, 1.2], 10, 'Student counts only');
+
+  const groupCategories = new Set(['SEN Status', 'Disadvantage', 'Gender', 'EAL']);
+  const groups = calculateStudentGroupsBreakdown(filteredRecords)
+    .filter(category => groupCategories.has(category.category))
+    .flatMap(category => category.groups.map(group => ({ category: category.category, ...group })));
+  addPagedTable(pres, 'Student group gaps',
+    ['Group', 'Students', 'Grade gap', 'Progress gap', '5+ gap'],
+    groups.map(group => [
+      `${group.category}: ${group.name}`, String(group.studentsCount),
+      group.tooFew ? 'Too few to compare' : fmt(group.gradeGap),
+      group.tooFew ? 'Too few to compare' : fmt(group.progressGap, 2),
+      group.tooFew ? 'Too few to compare' : fmt(group.pct5PlusGap, 1, ' pts')
+    ]), [2.9, 0.9, 1.55, 1.55, 1.5], 10, 'Gap relative to the rest of the cohort');
+
+  if (classListsData) {
+    const matrix = calculateMovementMatrix(rawSnapshotRecords, classListsData);
+    const newClasses = matrix.newClasses;
+    for (let firstCol = 0; firstCol < Math.max(1, newClasses.length); firstCol += 5) {
+      const columns = newClasses.slice(firstCol, firstCol + 5);
+      const rows = matrix.currentClasses.map(current => [
+        current,
+        ...columns.map(next => String(matrix.grid[current]?.[next]?.length || 0)),
+        String(matrix.notInNewByCurrent[current]?.length || 0),
+        String(matrix.rowTotals[current] || 0)
+      ]);
+      rows.push(['New to cohort', ...columns.map(next => String(matrix.newToCohortByNew[next]?.length || 0)), '–', String(matrix.newToCohortRowTotal)]);
+      rows.push(['Total', ...columns.map(next => String(matrix.colTotals[next] || 0)), String(matrix.notInNewColTotal), String(matrix.grandTotal)]);
+      addPagedTable(pres, 'Movement matrix', ['Current class', ...columns, 'No new class', 'Total'], rows,
+        [1.5, ...columns.map(() => 0.9), 1.2, 1.2], 9,
+        newClasses.length > 5 ? `New classes ${firstCol + 1}–${firstCol + columns.length} of ${newClasses.length}` : '');
+    }
+    const profiles = calculateNewClassProfiles(rawSnapshotRecords, classListsData);
+    const flags = calculateBalanceFlags(profiles.classProfiles, profiles.cohortProfile, movementThresholds).flags;
+    if (!flags.length) {
+      const slide = pres.addSlide();
+      setupSlideHeaderAndFooter(slide, 'Class balance flags');
+      addSafeText(slide, 'No balance concerns at the current thresholds.', 0.9, 1.6, 8.2, 0.6, { fontSize: 14 });
+    }
+    for (let start = 0; start < flags.length; start += 2) {
+      const slide = pres.addSlide();
+      setupSlideHeaderAndFooter(slide, 'Class balance flags',
+        flags.length > 2 ? `Flags ${start + 1}–${Math.min(start + 2, flags.length)} of ${flags.length}` : '');
+      flags.slice(start, start + 2).forEach((flag, position) => {
+        const y = 1.45 + position * 1.7;
+        addSafeText(slide, redact(flag.text), 0.9, y, 8.2, 0.7,
+          { fontSize: 14, bold: true, color: COLORS.darkGreen });
+        addSafeText(slide, redact(flag.why), 1.0, y + 0.75, 8.0, 0.7,
+          { fontSize: 11, color: COLORS.textBody, valign: 'top' });
+      });
+    }
+  }
+
+  return pres;
+}
+
+export async function exportPowerPointPresentation(data) {
+  const pres = buildPowerPointPresentation(data);
   const dateStamp = new Date().toISOString().slice(0, 10);
   const fileName = `class-snapshot-dashboard-${dateStamp}.pptx`;
   await pres.writeFile({ fileName });
