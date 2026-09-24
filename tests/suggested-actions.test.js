@@ -12,11 +12,11 @@ describe('Pure Suggested Actions - Mock Rules (Rules 1 to 7)', () => {
   // Mock student dataset:
   // Class 10 Sp1: 6 students.
   //   3 students 3+ grades away (points <= 2), 2 students grade 4, 1 student grade 5.
-  //   Disadv: 2 students (avg 1.5), Non-disadv: 4 students (avg 3.5). Gap = 2.0 grades > 0.5!
+  //   Disadv: 2 students (avg 1.5), Non-disadv: 4 students (avg 3.25). Gap = 1.75 grades > 0.5!
   //   Attendance: 2 students with 85% attendance and points < 5.
   //   Progress: 4 students with progress averaging -1.25 (< -1.0).
   // Class 10 Sp2: 6 students.
-  //   1 student 3+ away, 4 students grade 4, 1 student grade 7.
+  //   6 students grade 4.
   //   Disadv: 3 students (avg 4.0), Non-disadv: 3 students (avg 4.3). Gap = 0.3 <= 0.5.
   //   Progress: averaging +0.4.
   // Class 10 Sp3: Small class (3 students < 5) -> should be skipped for class rules.
@@ -61,11 +61,11 @@ describe('Pure Suggested Actions - Mock Rules (Rules 1 to 7)', () => {
     const actions = generateMockActions(mockStudents);
     const rule2Actions = actions.filter(a => a.ruleNumber === 2);
 
-    expect(rule2Actions.length).toBe(2); // 10 Sp1 (2 grade 4s), 10 Sp2 (4 grade 4s)
+    expect(rule2Actions.length).toBe(2); // 10 Sp1 (2 grade 4s), 10 Sp2 (6 grade 4s)
     const sp2 = rule2Actions.find(a => a.className === '10 Sp2');
     expect(sp2).toBeDefined();
-    expect(sp2.studentsAffected).toBe(4);
-    expect(sp2.title).toBe('Closest to grade 5: 4 grade 4s in 10 Sp2. Targeted exam practice.');
+    expect(sp2.studentsAffected).toBe(6);
+    expect(sp2.title).toBe('Closest to grade 5: 6 grade 4s in 10 Sp2. Targeted exam practice.');
   });
 
   it('Rule 3: Identifies underperforming students against prior attainment (estimate 5+, result < 5)', () => {
@@ -87,19 +87,25 @@ describe('Pure Suggested Actions - Mock Rules (Rules 1 to 7)', () => {
     expect(rule4Actions.length).toBe(1);
     expect(rule4Actions[0].className).toBe('10 Sp1');
     expect(rule4Actions[0].studentsAffected).toBe(2); // 2 disadv sat students in 10 Sp1
-    expect(rule4Actions[0].title).toBe('Disadvantaged gap of 2.0 grades in 10 Sp1.');
-    expect(rule4Actions[0].why).toContain('Why: non-disadvantaged students averaged 3.5 vs 1.5 for disadvantaged students.');
+    expect(rule4Actions[0].title).toBe('Disadvantaged gap of 1.8 grades in 10 Sp1.');
+    expect(rule4Actions[0].why).toContain('Why: non-disadvantaged students averaged 3.3 vs 1.5 for disadvantaged students.');
   });
 
-  it('Rule 5: Detects SEN Support students three or more grades from 5 (cohort >= 5)', () => {
+  it('Rule 5: Skips SEN Support groups below 5 and detects groups of 5', () => {
     const actions = generateMockActions(mockStudents);
     const rule5 = actions.find(a => a.ruleNumber === 5);
 
-    expect(rule5).toBeDefined();
     // SEN Support with points <= 2:
-    // John (1), Sarah (2), Alex (0), Noah (2), Tom (1) = 5 students!
-    expect(rule5.studentsAffected).toBe(5);
-    expect(rule5.title).toBe('Check support plans with the SENCo: 5 students.');
+    // John (1), Sarah (2), Alex (0), Tom (1) = 4 students; Noah has grade 4.
+    expect(rule5).toBeUndefined();
+
+    const fiveStudents = [...mockStudents, {
+      id: 16, surname: 'Example', firstName: 'Pat', className: '10 Sp2',
+      result: '2', points: 2, sen: 'SEN Support'
+    }];
+    const rule5WithFive = generateMockActions(fiveStudents).find(a => a.ruleNumber === 5);
+    expect(rule5WithFive.studentsAffected).toBe(5);
+    expect(rule5WithFive.title).toBe('Check support plans with the SENCo: 5 students.');
   });
 
   it('Rule 6: Identifies low attendance (< 90%) with points < 5', () => {
