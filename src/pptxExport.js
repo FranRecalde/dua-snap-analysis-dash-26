@@ -11,7 +11,13 @@ import {
 } from './stats.js';
 import { calculateMovementMatrix, calculateNewClassProfiles, calculateBalanceFlags } from './movementStats.js';
 import { generateSuggestedActions } from './actions.js';
-import { createStudentNameRedactor } from './pdfExport.js';
+import { generateQlaActions } from './qlaActions.js';
+import {
+  calculateCohortTierHighlights, calculateClassPaperMatrix, calculateQuestionStats,
+  calculateQuestionHeatmap, calculateClassReport, calculateStudentSkillProfiles,
+  calculateGrade4sByWeakestPaper
+} from './qlaStats.js';
+import { createStudentNameRedactor, qlaPrintTiers } from './pdfExport.js';
 
 // Color Palette
 const COLORS = {
@@ -50,14 +56,35 @@ function addSafeText(slide, value, x, y, w, h, options = {}) {
 }
 
 function addPagedTable(pres, title, headers, rows, widths, rowsPerSlide = 10, subtitle = '') {
-  const pages = Math.max(1, Math.ceil(rows.length / rowsPerSlide));
-  for (let page = 0; page < pages; page++) {
+  const rowHeight = row => Math.max(0.34, ...row.map((cell, index) => {
+    const charsPerLine = Math.max(8, Math.floor(((widths[index] || 1) - 0.07) * 72 / (9 * 0.56)));
+    return Math.ceil(String(cell ?? '').length / charsPerLine) * 0.17 + 0.06;
+  }));
+  const pages = [];
+  let pageRows = [];
+  let pageHeights = [];
+  let usedHeight = 0.38;
+  for (const row of rows) {
+    const height = rowHeight(row);
+    if (pageRows.length && (pageRows.length >= rowsPerSlide || usedHeight + height > 3.68)) {
+      pages.push({ rows: pageRows, heights: pageHeights });
+      pageRows = [];
+      pageHeights = [];
+      usedHeight = 0.38;
+    }
+    pageRows.push(row);
+    pageHeights.push(height);
+    usedHeight += height;
+  }
+  pages.push({ rows: pageRows, heights: pageHeights });
+  for (let page = 0; page < pages.length; page++) {
     const slide = pres.addSlide();
-    setupSlideHeaderAndFooter(slide, pages > 1 ? `${title} (${page + 1} of ${pages})` : title, subtitle);
-    const part = rows.slice(page * rowsPerSlide, (page + 1) * rowsPerSlide);
-    slide.addTable([headers, ...part], {
-      x: 0.8, y: 1.4, w: 8.4, h: 0.34 * (part.length + 1),
-      colW: widths, rowH: 0.34, margin: 0.035, fontFace: FONT_BODY,
+    setupSlideHeaderAndFooter(slide, pages.length > 1 ? `${title} (${page + 1} of ${pages.length})` : title, subtitle);
+    const part = pages[page];
+    const heights = [0.38, ...part.heights];
+    slide.addTable([headers, ...part.rows], {
+      x: 0.8, y: 1.4, w: 8.4, h: heights.reduce((sum, height) => sum + height, 0),
+      colW: widths, rowH: heights, margin: 0.035, fontFace: FONT_BODY,
       fontSize: 9, color: COLORS.textDark,
       border: { type: 'solid', color: COLORS.borderGray, pt: 0.5 },
       autoPage: false,
@@ -76,27 +103,17 @@ function fmt(value, digits = 1, suffix = '') {
  */
 function setupSlideHeaderAndFooter(slide, title, subtitle = '') {
   // Title
-  slide.addText(title, {
-    x: 0.8,
-    y: 0.45,
-    w: 8.4,
-    h: 0.45,
+  addSafeText(slide, title, 0.8, 0.45, 8.4, 0.45, {
     fontSize: 20,
     bold: true,
-    color: COLORS.darkGreen,
-    fontFace: FONT_TITLE
+    color: COLORS.darkGreen
   });
 
   // Optional Subtitle
   if (subtitle) {
-    slide.addText(subtitle, {
-      x: 0.8,
-      y: 0.85,
-      w: 8.4,
-      h: 0.25,
+    addSafeText(slide, subtitle, 0.8, 0.85, 8.4, 0.25, {
       fontSize: 10,
-      color: COLORS.textMuted,
-      fontFace: FONT_BODY
+      color: COLORS.textMuted
     });
   }
 
@@ -133,6 +150,10 @@ export function buildPowerPointPresentation({
   distanceRecords = filteredRecords,
   classListsData = null,
   qlaPapers = null,
+  qlaAssessmentTitle = '',
+  qlaFilters = {},
+  qlaQuestionFilters = {},
+  qlaActionThresholds = {},
   rawSnapshotRecords = allRecords,
   movementThresholds = {},
   options = {},
@@ -352,11 +373,12 @@ export function buildPowerPointPresentation({
     return parts.map((part, partIndex) => ({ action, index, part: part.trim(), partIndex }));
   });
   if (!actionCards.length) actionCards.push({ action: null, index: 0, part: 'No suggested actions at the current thresholds.', partIndex: 0 });
-  for (let start = 0; start < actionCards.length; start += 2) {
+  const suggestedPerSlide = qlaPapers?.length ? 1 : 2;
+  for (let start = 0; start < actionCards.length; start += suggestedPerSlide) {
     const slide = pres.addSlide();
     setupSlideHeaderAndFooter(slide, 'Suggested actions: Top 5',
-      actionCards.length > 2 ? `Actions ${Math.floor(start / 2) * 2 + 1}–${Math.min(start + 2, actionCards.length)} of ${actionCards.length}` : '');
-    actionCards.slice(start, start + 2).forEach((card, position) => {
+      actionCards.length > suggestedPerSlide ? `Actions ${start + 1}–${Math.min(start + suggestedPerSlide, actionCards.length)} of ${actionCards.length}` : '');
+    actionCards.slice(start, start + suggestedPerSlide).forEach((card, position) => {
       const y = 1.45 + position * 1.7;
       if (!card.action) {
         addSafeText(slide, card.part, 0.9, y, 8.2, 0.5, { fontSize: 14 });
@@ -422,6 +444,122 @@ export function buildPowerPointPresentation({
         addSafeText(slide, redact(flag.why), 1.0, y + 0.75, 8.0, 0.7,
           { fontSize: 11, color: COLORS.textBody, valign: 'top' });
       });
+    }
+  }
+
+  if (qlaPapers?.length) {
+    const tiers = qlaPrintTiers(qlaPapers);
+    const assessment = qlaAssessmentTitle ? redact(qlaAssessmentTitle) : 'Question level analysis';
+    for (const tier of tiers) {
+      const tierPapers = qlaPapers.filter(paper => paper.tier === tier);
+      const priorities = generateQlaActions(tierPapers, {
+        thresholds: qlaActionThresholds,
+        isClassListsLoaded: !!classListsData
+      }).topPriorities;
+      const priorityCards = priorities.flatMap((action, index) => {
+        const why = redact(action.why || '');
+        const parts = why ? Array.from({ length: Math.ceil(why.length / 220) }, (_, part) => why.slice(part * 220, (part + 1) * 220)) : [''];
+        return parts.map((part, partIndex) => ({ action, index, part, partIndex }));
+      });
+      if (!priorityCards.length) priorityCards.push({ action: null, part: 'No QLA priorities at the current thresholds.' });
+      for (let start = 0; start < priorityCards.length; start += 2) {
+        const slide = pres.addSlide();
+        setupSlideHeaderAndFooter(slide, `QLA Top 5 priorities: ${tier}`, assessment);
+        priorityCards.slice(start, start + 2).forEach((card, position) => {
+          const y = 1.45 + position * 1.7;
+          if (!card.action) {
+            addSafeText(slide, card.part, 0.9, y, 8.2, 0.6, { fontSize: 14 });
+            return;
+          }
+          addSafeText(slide, `${card.index + 1}. ${redact(card.action.title)}${card.partIndex ? ' (continued)' : ''}`,
+            0.9, y, 8.2, 0.55, { fontSize: 14, bold: true, color: COLORS.darkGreen });
+          addSafeText(slide, card.part, 1.0, y + 0.6, 8.0, 0.85,
+            { fontSize: 12, color: COLORS.textBody, valign: 'top' });
+        });
+      }
+
+      const highlights = calculateCohortTierHighlights(tierPapers, { ...qlaFilters, tier });
+      const highlight = highlights[tier.toLowerCase()];
+      const highlightSlide = pres.addSlide();
+      setupSlideHeaderAndFooter(highlightSlide, `Strongest and weakest paper: ${tier}`, assessment);
+      for (const [label, paper, y] of [
+        ['Strongest', highlight.strongest, 1.65],
+        ['Weakest', highlight.weakest, 3.05]
+      ]) {
+        addSafeText(highlightSlide, label, 0.9, y, 8.2, 0.35,
+          { fontSize: 13, bold: true, color: COLORS.textMuted });
+        addSafeText(highlightSlide, paper ? `${paper.paper} · ${fmt(paper.avgPct, 1, '%')} average · ${paper.n} students` : 'No present students',
+          0.9, y + 0.4, 8.2, 0.65, { fontSize: 21, bold: true, color: COLORS.darkGreen });
+      }
+
+      const questionRows = tierPapers.flatMap(paper => calculateQuestionStats(paper, {
+        ...qlaQuestionFilters, className: 'ALL'
+      }).questions.filter(question => question.facility !== null).map(question => ({ paper, question })));
+      const orderedQuestions = [...questionRows].sort((a, b) => a.question.facility - b.question.facility);
+      const best = orderedQuestions.slice(-3).reverse();
+      const worst = orderedQuestions.slice(0, 3);
+      addPagedTable(pres, `Best 3 and worst 3 questions: ${tier}`,
+        ['Rank', 'Paper', 'Question', 'Topic', 'Facility %'],
+        [
+          ...best.map((entry, index) => [`Best ${index + 1}`, entry.paper.paper, entry.question.label, entry.question.topic, fmt(entry.question.facility, 1)]),
+          ...worst.map((entry, index) => [`Worst ${index + 1}`, entry.paper.paper, entry.question.label, entry.question.topic, fmt(entry.question.facility, 1)])
+        ], [1.1, 1.65, 2.4, 2.1, 1.15], 8, assessment);
+
+      const matrix = calculateClassPaperMatrix(tierPapers, { ...qlaFilters, tier });
+      for (let start = 0; start < Math.max(1, matrix.papers.length); start += 4) {
+        const columns = matrix.papers.slice(start, start + 4);
+        const rows = matrix.rows.map(row => [
+          row.className,
+          ...columns.map(paper => {
+            const cell = row.cells[paper.sheetName];
+            return cell?.tooFew ? 'Too few' : fmt(cell?.avgPct, 1, '%');
+          })
+        ]);
+        rows.unshift(['Cohort', ...columns.map(paper => fmt(paper.cohortAvg, 1, '%'))]);
+        addPagedTable(pres, `Class by paper: ${tier}`,
+          ['Class', ...columns.map(paper => paper.paper)], rows,
+          [2.0, ...columns.map(() => 6.4 / Math.max(1, columns.length))], 9,
+          matrix.papers.length > 4 ? `${assessment} · Papers ${start + 1}–${start + columns.length}` : assessment);
+      }
+
+      const weakest = orderedQuestions.slice(0, 10);
+      const heatmaps = new Map(tierPapers.map(paper => [paper.sheetName,
+        calculateQuestionHeatmap(paper, qlaQuestionFilters)]));
+      const heatmapClasses = [...new Set([...heatmaps.values()].flatMap(heatmap => heatmap.classes.map(item => item.className)))].sort();
+      for (let start = 0; start < Math.max(1, heatmapClasses.length); start += 4) {
+        const columns = heatmapClasses.slice(start, start + 4);
+        const rows = weakest.map(({ paper, question }) => {
+          const heatmap = heatmaps.get(paper.sheetName);
+          const row = heatmap.rows.find(item => item.key === question.key);
+          return [
+            `${paper.paper}: ${question.label}`,
+            fmt(question.facility, 1, '%'),
+            ...columns.map(className => {
+              const cell = row?.cells[className];
+              return !cell || cell.tooFew ? '–' : fmt(cell.facility, 1, '%');
+            })
+          ];
+        });
+        addPagedTable(pres, `10 weakest questions heatmap: ${tier}`,
+          ['Paper / question', 'Cohort', ...columns], rows,
+          [2.5, 1.1, ...columns.map(() => 4.8 / Math.max(1, columns.length))], 8,
+          heatmapClasses.length > 4 ? `${assessment} · Classes ${start + 1}–${start + columns.length}` : assessment);
+      }
+
+      const approaches = matrix.classes.flatMap(className => calculateClassReport(tierPapers, className)
+        .beatingCohort.map(question => ({ className, ...question })))
+        .sort((a, b) => b.gap - a.gap);
+      addPagedTable(pres, `Approaches worth sharing: ${tier}`,
+        ['Class', 'Paper', 'Question', 'Gap', 'Class %', 'Cohort %'],
+        approaches.map(item => [item.className, item.paper, item.label,
+          fmt(item.gap, 1, ' pts'), fmt(item.classFacility, 1, '%'), fmt(item.cohortFacility, 1, '%')]),
+        [1.2, 1.35, 2.45, 1.15, 1.15, 1.1], 9, assessment);
+
+      const grade4Groups = calculateGrade4sByWeakestPaper(calculateStudentSkillProfiles(tierPapers))[tier.toLowerCase()];
+      addPagedTable(pres, `Grade 4s by weakest paper: ${tier}`,
+        ['Weakest paper', 'Grade 4 students'],
+        grade4Groups.length ? grade4Groups.map(group => [group.weakestPaper, String(group.count)]) : [['No grade 4 group', '0']],
+        [5.8, 2.6], 10, 'Student counts only');
     }
   }
 
