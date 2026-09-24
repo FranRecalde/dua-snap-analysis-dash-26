@@ -5445,7 +5445,8 @@ body {
 .movement-matrix-table td:first-child {
   text-align: left;
   font-weight: 600;
-  background: #f8fafc;
+  background: #22332c;
+  color: #f8fafc;
   position: sticky;
   left: 0;
   z-index: 2;
@@ -5453,25 +5454,33 @@ body {
 }
 
 .movement-matrix-table thead th {
-  background: #f8fafc;
+  background: #263a32;
   font-weight: 700;
-  color: var(--text-primary);
+  color: #f8fafc;
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
 .movement-matrix-table tr.movement-row-new-cohort td {
-  background: #fdf4ff;
+  background: #35243d;
+  color: #f8fafc;
   font-weight: 600;
 }
 
 .movement-matrix-table tr.movement-row-total td,
 .movement-matrix-table th.movement-col-total,
 .movement-matrix-table td.movement-col-total {
-  background: #f1f5f9;
+  background: #294039;
   font-weight: 700;
-  color: var(--brand-dark);
+  color: #f8fafc;
+}
+
+.movement-matrix-table th.movement-col-unassigned,
+.movement-matrix-table td.movement-col-unassigned {
+  background: #3d282e;
+  color: #f8fafc;
+  font-weight: 600;
 }
 
 .movement-matrix-cell {

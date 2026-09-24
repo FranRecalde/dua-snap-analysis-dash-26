@@ -2144,8 +2144,11 @@ function renderMovementAndBalanceSection() {
         let style = '';
         if (count > 0) {
           const ratio = Math.min(1, count / matrix.maxCellCount);
-          const bgOpacity = 0.12 + 0.65 * ratio;
-          style = `background: rgba(46, 105, 48, ${bgOpacity.toFixed(2)}); color: ${bgOpacity > 0.45 ? '#ffffff' : '#1e3a24'}; font-weight: 600;`;
+          const shades = ratio < 0.25 ? ['#d9eddd', '#173e24']
+            : ratio < 0.5 ? ['#a8d4ae', '#173e24']
+              : ratio < 0.75 ? ['#397d4a', '#ffffff']
+                : ['#245c36', '#ffffff'];
+          style = `background: ${shades[0]}; color: ${shades[1]}; font-weight: 600;`;
         }
 
         return `
@@ -2169,8 +2172,7 @@ function renderMovementAndBalanceSection() {
         <tr>
           <td><strong>${escapeHtml(cur)}</strong></td>
           ${cellsHtml}
-          <td class="movement-matrix-cell ${notInNewCount > 0 ? 'clickable' : ''} ${isNotInNewSelected ? 'active-selected' : ''}"
-              style="${notInNewCount > 0 ? 'background: #fff1f2; color: #9f1239; font-weight: 600;' : ''}"
+          <td class="movement-matrix-cell movement-col-unassigned ${notInNewCount > 0 ? 'clickable' : ''} ${isNotInNewSelected ? 'active-selected' : ''}"
               data-cell-type="notInNew"
               data-row="${escapeHtml(cur)}">
             ${notInNewCount > 0 ? notInNewCount : '<span style="color:#cbd5e1;">-</span>'}
@@ -2192,7 +2194,6 @@ function renderMovementAndBalanceSection() {
 
       return `
         <td class="movement-matrix-cell ${count > 0 ? 'clickable' : ''} ${isSelected ? 'active-selected' : ''}"
-            style="${count > 0 ? 'background: #fdf4ff; color: #86198f; font-weight: 600;' : ''}"
             data-cell-type="newCohort"
             data-col="${escapeHtml(nw)}">
           ${count > 0 ? count : '<span style="color:#cbd5e1;">-</span>'}
@@ -2211,7 +2212,7 @@ function renderMovementAndBalanceSection() {
           <tr>
             <th style="min-width: 130px;">Current \\ New</th>
             ${colHeaders}
-            <th style="background: #fff1f2; color: #9f1239;">Not in a new class</th>
+            <th class="movement-col-unassigned">Not in a new class</th>
             <th class="movement-col-total">Total</th>
           </tr>
         </thead>
@@ -2220,14 +2221,14 @@ function renderMovementAndBalanceSection() {
           <tr class="movement-row-new-cohort">
             <td><em>New to the cohort (no mock result)</em></td>
             ${newToCohortCells}
-            <td style="color:#cbd5e1;">-</td>
+            <td class="movement-col-unassigned">-</td>
             <td class="movement-col-total">${matrix.newToCohortRowTotal}</td>
           </tr>
           <tr class="movement-row-total">
             <td>Total</td>
             ${totalColsHtml}
-            <td class="movement-col-total" style="color: #9f1239;">${matrix.notInNewColTotal}</td>
-            <td class="movement-col-total" style="background: #e2e8f0; font-size: 13px;">${matrix.grandTotal}</td>
+            <td class="movement-col-total" style="font-size: 13px;">${matrix.notInNewColTotal}</td>
+            <td class="movement-col-total" style="font-size: 13px;">${matrix.grandTotal}</td>
           </tr>
         </tbody>
       </table>
