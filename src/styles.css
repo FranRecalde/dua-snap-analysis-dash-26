@@ -4137,9 +4137,9 @@ body {
 
 /* View Switch at top of dashboard */
 .view-switch-panel {
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
-  border-left: 4px solid var(--brand-green);
+  background: #1f2a26;
+  border: 1px solid #52675b;
+  border-left: 4px solid #75a87c;
   border-radius: 8px;
   padding: 12px 18px;
   margin: 14px 0 20px 0;
@@ -4155,22 +4155,22 @@ body {
 .view-switch-label {
   font-size: 13.5px;
   font-weight: 700;
-  color: var(--text-primary);
+  color: #f8fafc;
 }
 
 .view-switch-segmented {
   display: inline-flex;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
+  background: #16221c;
+  border: 1px solid #64748b;
   border-radius: 6px;
   padding: 2px;
   gap: 2px;
 }
 
 .view-switch-btn {
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
+  border: 1px solid #52675b;
+  background: #25352d;
+  color: #e2e8f0;
   font-size: 13px;
   font-weight: 600;
   padding: 6px 14px;
@@ -4180,19 +4180,24 @@ body {
 }
 
 .view-switch-btn:hover {
-  color: var(--text-primary);
-  background: #f1f5f9;
+  color: #ffffff;
+  background: #344b3e;
 }
 
 .view-switch-btn.active {
   background: var(--brand-green);
   color: #ffffff;
+  border-color: #75a87c;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.view-switch-btn.active:hover {
+  background: var(--brand-green-hover);
 }
 
 .view-switch-hint {
   font-size: 12px;
-  color: var(--text-muted);
+  color: #cbd5e1;
 }
 
 /* Two Lists: Mismatch Grid */
