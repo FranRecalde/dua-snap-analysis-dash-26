@@ -19,7 +19,7 @@ describe('Pure Suggested Actions - Mock Rules (Rules 1 to 7)', () => {
   //   6 students grade 4.
   //   Disadv: 3 students (avg 4.0), Non-disadv: 3 students (avg 4.3). Gap = 0.3 <= 0.5.
   //   Progress: averaging +0.4.
-  // Class 10 Sp3: Small class (3 students < 5) -> should be skipped for class rules.
+  // Class 10 Sp3: Small class (3 students < 5) -> skipped for comparison rules.
   //   3 students 3+ away.
   const mockStudents = [
     // 10 Sp1 (6 students)
@@ -44,17 +44,25 @@ describe('Pure Suggested Actions - Mock Rules (Rules 1 to 7)', () => {
     { id: 15, surname: 'Adams', firstName: 'Victor', className: '10 Sp3', result: '1', points: 1, estimate: 3.0, progress: -1.0, sen: 'No SEN', disadvantaged: 'Yes', attendance: '85%' }
   ];
 
-  it('Rule 1: Identifies class with most students 3+ grades from 5 (skipping small classes)', () => {
+  it('Rule 1: Identifies class with most students 3+ grades from 5', () => {
     const actions = generateMockActions(mockStudents);
     const rule1 = actions.find(a => a.ruleNumber === 1);
 
     expect(rule1).toBeDefined();
-    // 10 Sp1 has 3 students 3+ away. 10 Sp3 has 3, but is skipped because < 5 students.
+    // 10 Sp1 and 10 Sp3 each have 3; class-name order breaks the tie.
     expect(rule1.className).toBe('10 Sp1');
     expect(rule1.studentsAffected).toBe(3);
     expect(rule1.title).toContain('Priority support group: 10 Sp1, 3 students three or more grades from 5.');
     expect(rule1.why).toContain('Why: 10 Sp1 has 3 students three or more grades from 5, highest in cohort.');
     expect(rule1.source).toBe('Mock');
+  });
+
+  it('Rule 1 includes students in a small class', () => {
+    const actions = generateMockActions(mockStudents.filter(s => s.className === '10 Sp3'));
+    const rule1 = actions.find(a => a.ruleNumber === 1);
+
+    expect(rule1.className).toBe('10 Sp3');
+    expect(rule1.studentsAffected).toBe(3);
   });
 
   it('Rule 2: Identifies grade 4 students per class (targeted exam practice)', () => {
@@ -91,13 +99,14 @@ describe('Pure Suggested Actions - Mock Rules (Rules 1 to 7)', () => {
     expect(rule4Actions[0].why).toContain('Why: non-disadvantaged students averaged 3.3 vs 1.5 for disadvantaged students.');
   });
 
-  it('Rule 5: Skips SEN Support groups below 5 and detects groups of 5', () => {
+  it('Rule 5: Detects SEN Support groups of 4 and 5', () => {
     const actions = generateMockActions(mockStudents);
     const rule5 = actions.find(a => a.ruleNumber === 5);
 
     // SEN Support with points <= 2:
     // John (1), Sarah (2), Alex (0), Tom (1) = 4 students; Noah has grade 4.
-    expect(rule5).toBeUndefined();
+    expect(rule5.studentsAffected).toBe(4);
+    expect(rule5.title).toBe('Check support plans with the SENCo: 4 students.');
 
     const fiveStudents = [...mockStudents, {
       id: 16, surname: 'Example', firstName: 'Pat', className: '10 Sp2',
@@ -106,6 +115,32 @@ describe('Pure Suggested Actions - Mock Rules (Rules 1 to 7)', () => {
     const rule5WithFive = generateMockActions(fiveStudents).find(a => a.ruleNumber === 5);
     expect(rule5WithFive.studentsAffected).toBe(5);
     expect(rule5WithFive.title).toBe('Check support plans with the SENCo: 5 students.');
+  });
+
+  it('Student-list rules fire for one student in a small class', () => {
+    const actions = generateMockActions([{
+      id: 16, surname: 'Example', firstName: 'Pat', className: '10 Solo',
+      result: '4', points: 4, estimate: 5.5, attendance: '80%'
+    }]);
+
+    const grade4 = actions.find(a => a.ruleNumber === 2);
+    expect(grade4.studentsAffected).toBe(1);
+    expect(grade4.title).toBe('Closest to grade 5: 1 grade 4 in 10 Solo. Targeted exam practice.');
+    expect(actions.find(a => a.ruleNumber === 3)?.studentsAffected).toBe(1);
+    expect(actions.find(a => a.ruleNumber === 6)?.studentsAffected).toBe(1);
+  });
+
+  it('Comparison rules skip a class of four despite a disadvantaged gap', () => {
+    const records = [
+      { id: 16, className: '10 Small', points: 1, disadvantaged: 'Yes', progress: -2 },
+      { id: 17, className: '10 Small', points: 2, disadvantaged: 'Yes', progress: -2 },
+      { id: 18, className: '10 Small', points: 5, disadvantaged: 'No', progress: -2 },
+      { id: 19, className: '10 Small', points: 5, disadvantaged: 'No', progress: -2 }
+    ];
+    const actions = generateMockActions(records);
+
+    expect(actions.some(a => a.ruleNumber === 4)).toBe(false);
+    expect(actions.some(a => a.ruleNumber === 7)).toBe(false);
   });
 
   it('Rule 6: Identifies low attendance (< 90%) with points < 5', () => {

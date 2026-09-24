@@ -67,6 +67,17 @@ describe('QLA Actions Pure Module Tests (Invented Data)', () => {
     expect(emptyRes.actions.filter(a => a.ruleNumber === 1)).toHaveLength(0);
   });
 
+  it('Comparison actions skip percentages based on four present students', () => {
+    const paper = {
+      sheetName: 'Listening F', paper: 'Listening', tier: 'Foundation', totalMax: 10,
+      questions: [{ key: 'q1', label: 'Q1 Dictation', maxMarks: 10 }],
+      students: makeStudents(4, '10SP1', 0, 10)
+    };
+
+    const actions = generateQlaActions([paper]).actions;
+    expect(actions.filter(a => [1, 3, 6, 8].includes(a.ruleNumber))).toHaveLength(0);
+  });
+
   it('2. Rule 2: Class 10+ points below cohort on a question triggers, but does not trigger when gap is under 10 or class < 5 students', () => {
     // 10SP1: 5 students with mark 2 on q1 (facility 20%)
     // 10SP2: 5 students with mark 8 on q1 (facility 80%)

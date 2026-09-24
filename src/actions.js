@@ -7,12 +7,13 @@
  * - Rule-based only. No AI.
  * - Each action names the class (following the existing view switch) and the number of students affected.
  * - Each action has a source tag: "Mock", "Class balance" or "QLA".
- * - Skip any class or group with fewer than 5 students.
+ * - Comparisons need at least 5 students; student-list actions need at least 1.
  * - Reuses balance flag functions from src/movementStats.js.
  * - Imports QLA actions from src/qlaActions.js.
  */
 
 import { generateQlaActions } from './qlaActions.js';
+import { minimumActionGroupSize } from './actionGroupSize.js';
 import {
   calculateBalanceFlags,
   calculateNewClassProfiles
@@ -70,7 +71,7 @@ export function generateMockActions(records = [], thresholds = DEFAULT_SUGGESTED
 
   for (const cls of sortedClassNames) {
     const classRecords = classMap.get(cls);
-    if (classRecords.length < 5) continue; // Skip class < 5 students
+    if (classRecords.length < minimumActionGroupSize('Mock', 1)) continue;
 
     const threeAway = classRecords.filter(r => calculateDistanceBand(r.points, r.isNotSat) === 'three_or_more_away');
     if (threeAway.length > maxThreeAwayCount) {
@@ -101,7 +102,7 @@ export function generateMockActions(records = [], thresholds = DEFAULT_SUGGESTED
   // =========================================================================
   for (const cls of sortedClassNames) {
     const classRecords = classMap.get(cls);
-    if (classRecords.length < 5) continue;
+    if (classRecords.length < minimumActionGroupSize('Mock', 2)) continue;
 
     const grade4s = classRecords.filter(r => calculateDistanceBand(r.points, r.isNotSat) === 'one_grade_away');
     if (grade4s.length > 0) {
@@ -123,7 +124,7 @@ export function generateMockActions(records = [], thresholds = DEFAULT_SUGGESTED
   // =========================================================================
   // RULE 3: Students with an estimate of grade 5 or above who scored below grade 5
   // Text: "Underperforming against prior attainment: [n] students."
-  // Small group rule: Skip if fewer than 5 students
+  // Student-list action: include any qualifying student
   // =========================================================================
   const underperforming = records.filter(r => {
     if (r.isNotSat || r.points === null || isNaN(r.points)) return false;
@@ -131,7 +132,7 @@ export function generateMockActions(records = [], thresholds = DEFAULT_SUGGESTED
     return !isNaN(est) && est >= 5.0 && r.points < 5;
   });
 
-  if (underperforming.length >= 5) {
+  if (underperforming.length >= minimumActionGroupSize('Mock', 3)) {
     actions.push({
       id: 'mock_rule_3',
       source: 'Mock',
@@ -153,7 +154,7 @@ export function generateMockActions(records = [], thresholds = DEFAULT_SUGGESTED
   // =========================================================================
   for (const cls of sortedClassNames) {
     const classRecords = classMap.get(cls);
-    if (classRecords.length < 5) continue;
+    if (classRecords.length < minimumActionGroupSize('Mock', 4)) continue;
 
     const satDisadv = classRecords.filter(r => !r.isNotSat && r.points !== null && !isNaN(r.points) && r.disadvantaged === 'Yes');
     const satNonDisadv = classRecords.filter(r => !r.isNotSat && r.points !== null && !isNaN(r.points) && r.disadvantaged !== 'Yes');
@@ -184,13 +185,13 @@ export function generateMockActions(records = [], thresholds = DEFAULT_SUGGESTED
   // =========================================================================
   // RULE 5: SEN Support students three or more grades from 5
   // Text: "Check support plans with the SENCo: [n] students."
-  // Small group rule: Skip if fewer than 5 students
+  // Student-list action: include any qualifying student
   // =========================================================================
   const senThreeAway = records.filter(r => {
     return r.sen === 'SEN Support' && calculateDistanceBand(r.points, r.isNotSat) === 'three_or_more_away';
   });
 
-  if (senThreeAway.length >= 5) {
+  if (senThreeAway.length >= minimumActionGroupSize('Mock', 5)) {
     actions.push({
       id: 'mock_rule_5',
       source: 'Mock',
@@ -209,7 +210,7 @@ export function generateMockActions(records = [], thresholds = DEFAULT_SUGGESTED
   // RULE 6: Low attendance
   // Students with attendance below 90% who scored below grade 5:
   // Text: "Attendance and attainment concern: [n] students."
-  // Small group rule: Skip if fewer than 5 students
+  // Student-list action: include any qualifying student
   // =========================================================================
   const attendanceConcern = records.filter(r => {
     const rawAtt = String(r.attendance || '').replace('%', '').trim();
@@ -219,7 +220,7 @@ export function generateMockActions(records = [], thresholds = DEFAULT_SUGGESTED
     return r.isNotSat || r.points === null || isNaN(r.points) || r.points < 5;
   });
 
-  if (attendanceConcern.length >= 5) {
+  if (attendanceConcern.length >= minimumActionGroupSize('Mock', 6)) {
     actions.push({
       id: 'mock_rule_6',
       source: 'Mock',
@@ -241,7 +242,7 @@ export function generateMockActions(records = [], thresholds = DEFAULT_SUGGESTED
   // =========================================================================
   for (const cls of sortedClassNames) {
     const classRecords = classMap.get(cls);
-    if (classRecords.length < 5) continue;
+    if (classRecords.length < minimumActionGroupSize('Mock', 7)) continue;
 
     const withProgress = classRecords.filter(r => typeof r.progress === 'number' && !isNaN(r.progress));
     if (withProgress.length > 0) {
@@ -320,7 +321,7 @@ export function generateClassBalanceActions(allRecords = [], classListsData = nu
   // Text: "Baseline assessment needed: [n] students in [classes]."
   // =========================================================================
   const inNewClassesNoMock = classListsData.inNewClassesNoMockResult || [];
-  if (inNewClassesNoMock.length > 0) {
+  if (inNewClassesNoMock.length >= minimumActionGroupSize('Class balance', 9)) {
     const uniqueClasses = [...new Set(inNewClassesNoMock.map(s => s.newClassName).filter(Boolean))].sort(compareClassNames);
     const classesStr = uniqueClasses.length > 0 ? uniqueClasses.join(', ') : 'new classes';
     const n = inNewClassesNoMock.length;

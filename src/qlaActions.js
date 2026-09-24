@@ -10,7 +10,7 @@
  * - Has student list behind it for 'Show students'.
  * - Papers are only ever compared within the same tier.
  * - Absent students never count.
- * - Skip any class or group with fewer than 5 present students.
+ * - Comparisons need at least 5 present students; student-list actions need at least 1.
  * - Classes follow the existing view switch (activeClass).
  */
 
@@ -24,6 +24,7 @@ import {
   calculateGrade4sByWeakestPaper,
   calculateDemographicGroupGaps
 } from './qlaStats.js';
+import { minimumActionGroupSize } from './actionGroupSize.js';
 
 export const DEFAULT_QLA_ACTION_THRESHOLDS = {
   weakFacility: 40,       // Question weak facility % (default 40)
@@ -155,7 +156,7 @@ export function generateQlaActions(papers = [], options = {}) {
   // =========================================================================
   for (const paper of papers) {
     const qStats = calculateQuestionStats(paper, filters, { strong: 70, weak: thresholds.weakFacility });
-    if (!qStats || qStats.n === 0 || !qStats.questions || qStats.questions.length === 0) continue;
+    if (!qStats || qStats.n < minimumActionGroupSize('QLA', 1) || !qStats.questions || qStats.questions.length === 0) continue;
 
     const validQuestions = qStats.questions.filter(q => q.facility !== null && q.maxMarks > 0);
     if (validQuestions.length === 0) continue;
@@ -233,7 +234,7 @@ export function generateQlaActions(papers = [], options = {}) {
   // =========================================================================
   for (const paper of papers) {
     const cohortQStats = calculateQuestionStats(paper, { className: 'ALL' });
-    if (!cohortQStats || cohortQStats.n < 5 || !cohortQStats.questions) continue;
+    if (!cohortQStats || cohortQStats.n < minimumActionGroupSize('QLA', 2) || !cohortQStats.questions) continue;
 
     const cohortMap = new Map();
     for (const q of cohortQStats.questions) {
@@ -255,7 +256,7 @@ export function generateQlaActions(papers = [], options = {}) {
     const classStatsMap = new Map();
 
     for (const [cls, stList] of classStudentMap.entries()) {
-      if (stList.length >= 5) {
+      if (stList.length >= minimumActionGroupSize('QLA', 2)) {
         eligibleClasses.push(cls);
         const cStats = calculateQuestionStats(paper, { className: cls });
         classStatsMap.set(cls, cStats);
@@ -365,7 +366,7 @@ export function generateQlaActions(papers = [], options = {}) {
     const paperStatsList = [];
     for (const p of tierPapers) {
       const stats = calculatePaperStats(p, filters);
-      if (stats && stats.n > 0 && stats.avgPct !== null) {
+      if (stats && stats.n >= minimumActionGroupSize('QLA', 3) && stats.avgPct !== null) {
         paperStatsList.push({ paper: p, stats });
       }
     }
@@ -458,7 +459,7 @@ export function generateQlaActions(papers = [], options = {}) {
 
       for (const p of tierPapers) {
         const stats = calculatePaperStats(p, { className: cls });
-        if (stats && stats.n >= 5 && stats.avgPct !== null) {
+        if (stats && stats.n >= minimumActionGroupSize('QLA', 4) && stats.avgPct !== null) {
           eligibleClassPapers.push({
             sheetName: p.sheetName,
             paper: p.paper,
@@ -544,7 +545,7 @@ export function generateQlaActions(papers = [], options = {}) {
   for (const tierKey of ['foundation', 'higher']) {
     const groups = grade4Groups[tierKey] || [];
     for (const group of groups) {
-      if (group.count > 0 && group.weakestPaper && group.weakestPaper !== 'not enough papers') {
+      if (group.count >= minimumActionGroupSize('QLA', 5) && group.weakestPaper && group.weakestPaper !== 'not enough papers') {
         const title = `Targeted intervention: ${group.count} grade 4s whose weakest paper is ${group.weakestPaper}.`;
         const tierName = tierKey === 'foundation' ? 'Foundation' : 'Higher';
 
@@ -582,7 +583,7 @@ export function generateQlaActions(papers = [], options = {}) {
   // =========================================================================
   for (const paper of papers) {
     const qStats = calculateQuestionStats(paper, filters);
-    if (!qStats || qStats.n === 0 || !qStats.questions) continue;
+    if (!qStats || qStats.n < minimumActionGroupSize('QLA', 6) || !qStats.questions) continue;
 
     const paperAndTier = getPaperTierLabel(paper);
 
@@ -695,7 +696,7 @@ export function generateQlaActions(papers = [], options = {}) {
 
   for (const paper of papers) {
     const qStats = calculateQuestionStats(paper, filters, { strong: 70, weak: thresholds.weakFacility });
-    if (!qStats || qStats.n === 0 || !qStats.questions) continue;
+    if (!qStats || qStats.n < minimumActionGroupSize('QLA', 8) || !qStats.questions) continue;
 
     for (const q of qStats.questions) {
       const isDictation = /dictation/i.test(q.label) || /dictation/i.test(q.section || '') || /dictation/i.test(q.topic || '');
@@ -769,7 +770,7 @@ export function generateQlaActions(papers = [], options = {}) {
     const paperAndTier = paperObj ? getPaperTierLabel(paperObj) : paperGap.sheetName;
 
     for (const comp of (paperGap.comparisons || [])) {
-      if (comp.tooFew) continue; // Skip groups with < 5 present students
+      if (comp.nA < minimumActionGroupSize('QLA', 9) || comp.nB < minimumActionGroupSize('QLA', 9)) continue;
       if (comp.id !== 'sen' && comp.id !== 'disadvantaged') continue;
 
       // Group A is target group (SEN Support or Disadvantaged)
@@ -836,7 +837,7 @@ export function generateQlaActions(papers = [], options = {}) {
     const absentCount = absentStudents.length;
     const absentRate = (absentCount / totalEnrolled) * 100;
 
-    if (absentRate > thresholds.absenceRate) {
+    if (absentCount >= minimumActionGroupSize('QLA', 10) && absentRate > thresholds.absenceRate) {
       const paperAndTier = getPaperTierLabel(paper);
       const title = `Catch up sitting needed for ${paperAndTier}: ${absentCount} students.`;
 
