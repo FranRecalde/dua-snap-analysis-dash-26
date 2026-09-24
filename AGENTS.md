@@ -11,3 +11,4 @@ Keep GEMINI.md and AGENTS.md identical. If you change one, change the other.
 8. **No page navigation**: There is no page navigation. Do not create one.
 9. **Rigorous verification & reporting**: After every change, run the full test suite and report: files changed, tests added, pass and fail counts.
 10. **British English & UK conventions**: British English in all UI text. UK date format (e.g., 23 September 2026).
+12. After every change that passes all tests, commit with a short message describing the change. Never push without being asked.
