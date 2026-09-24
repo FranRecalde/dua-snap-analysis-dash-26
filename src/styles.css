@@ -1489,6 +1489,15 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
+.table-responsive,
+.movement-matrix-scroll-container,
+.qla-heatmap-scroll-container,
+.qla-table-scroll-container {
+  min-height: 0;
+  background: var(--bg-surface);
+  scrollbar-color: var(--border-color) var(--bg-surface);
+}
+
 .comparison-table {
   width: 100%;
   border-collapse: collapse;
@@ -5571,8 +5580,20 @@ body {
   user-select: none;
 }
 
+.new-class-profile-table .distance-band-header {
+  background: var(--bg-surface-elevated);
+  color: var(--text-primary);
+  border-top: 3px solid transparent;
+}
+
+.new-class-profile-table .distance-band-header.band-5 { border-top-color: #4ade80; }
+.new-class-profile-table .distance-band-header.band-1 { border-top-color: #fbbf24; }
+.new-class-profile-table .distance-band-header.band-2 { border-top-color: #fb923c; }
+.new-class-profile-table .distance-band-header.band-3 { border-top-color: #f87171; }
+
 .new-class-profile-table tfoot tr td {
-  background: #f8fafc;
+  background: var(--bg-surface-elevated);
+  color: var(--text-primary);
   font-weight: 700;
   border-top: 2px solid var(--border-color);
 }
