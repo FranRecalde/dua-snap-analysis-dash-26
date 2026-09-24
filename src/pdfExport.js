@@ -4,17 +4,23 @@ export const PDF_SECTIONS = [
   { key: 'distance', label: 'Distance from grade 5', id: 'section-distance-grade-5' },
   { key: 'groups', label: 'Student groups', id: 'section-student-groups' },
   { key: 'movement', label: 'Movement and class balance', id: 'section-movement-balance', needsClassLists: true },
+  { key: 'qlaTop', label: 'QLA: Top 5 priorities', id: 'print-qla-top', needsQla: true },
+  { key: 'qlaPapers', label: 'QLA: Papers and skills', id: 'print-qla-papers', needsQla: true },
+  { key: 'qlaQuestions', label: 'QLA: Questions', id: 'print-qla-questions', needsQla: true },
+  { key: 'qlaClasses', label: 'QLA: Classes', id: 'print-qla-classes', needsQla: true },
+  { key: 'qlaStudents', label: 'QLA: Students', id: 'print-qla-students', needsQla: true },
+  { key: 'qlaActions', label: 'QLA: All actions', id: 'print-qla-actions', needsQla: true },
   { key: 'diagnostics', label: 'Diagnostics', id: 'diagnostics-panel' }
 ];
 
-export function selectedPdfSections(options, hasClassLists) {
+export function selectedPdfSections(options, hasClassLists, hasQla = false) {
   return PDF_SECTIONS.filter(section =>
-    options[section.key] && (!section.needsClassLists || hasClassLists)
+    options[section.key] && (!section.needsClassLists || hasClassLists) && (!section.needsQla || hasQla)
   );
 }
 
-export function setPdfSectionVisibility(documentRef, options, hasClassLists) {
-  const selected = selectedPdfSections(options, hasClassLists);
+export function setPdfSectionVisibility(documentRef, options, hasClassLists, hasQla = false) {
+  const selected = selectedPdfSections(options, hasClassLists, hasQla);
   for (const section of PDF_SECTIONS) {
     documentRef.getElementById(section.id)?.classList.toggle('pdf-export-hidden', !selected.includes(section));
   }
@@ -24,6 +30,25 @@ export function setPdfSectionVisibility(documentRef, options, hasClassLists) {
       documentRef.getElementById(section.id)?.classList.remove('pdf-export-hidden')
     )
   };
+}
+
+export function qlaPrintClasses(papers, selection = 'ALL') {
+  const classes = [...new Set(papers.flatMap(paper => (paper.students || [])
+    .map(student => student.activeClass || student.className || student.currentClass)
+    .filter(name => name && name !== 'Unassigned')))].sort();
+  return selection === 'ALL' ? classes : classes.filter(name => name === selection);
+}
+
+export function qlaPrintTiers(papers) {
+  return ['Foundation', 'Higher'].filter(tier => papers.some(paper => paper.tier === tier));
+}
+
+export function heatmapPrintColumns(columnCount, columnsPerPage = 6) {
+  const chunks = [];
+  for (let start = 2; start < columnCount; start += columnsPerPage) {
+    chunks.push([0, 1, ...Array.from({ length: Math.min(columnsPerPage, columnCount - start) }, (_, i) => start + i)]);
+  }
+  return chunks.length ? chunks : [[0, 1].slice(0, columnCount)];
 }
 
 export function livePdfFilterSummary(filters = {}, topPerformersClass = null) {
@@ -59,8 +84,9 @@ export function matrixPrintColumns(columnCount, columnsPerPage = 7) {
 export function createStudentNameRedactor(records = [], pseudonymMap = new Map()) {
   const replacements = [];
   for (const record of records) {
-    const first = String(record.firstName || '').trim();
-    const surname = String(record.surname || '').trim();
+    const commaName = String(record.name || record.studentName || '').split(',');
+    const first = String(record.firstName || (commaName.length > 1 ? commaName.slice(1).join(',') : '')).trim();
+    const surname = String(record.surname || (commaName.length > 1 ? commaName[0] : '')).trim();
     if (!first || !surname) continue;
     const className = record.activeClass || record.newClassName || record.className || 'Unassigned';
     const initials = `${first[0].toUpperCase()}.${surname[0].toUpperCase()}., ${className}`;

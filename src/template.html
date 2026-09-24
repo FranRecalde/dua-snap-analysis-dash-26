@@ -359,6 +359,10 @@
               <span class="print-meta-value" id="print-cover-filters">All classes</span>
             </div>
             <div class="print-cover-meta-row">
+              <span class="print-meta-label">QLA assessment:</span>
+              <span class="print-meta-value" id="print-cover-qla-title"></span>
+            </div>
+            <div class="print-cover-meta-row">
               <span class="print-meta-label">Prepared on:</span>
               <span class="print-meta-value" id="print-cover-date">--</span>
             </div>
@@ -1722,6 +1726,13 @@
         </div>
       </section>
 
+      <section id="print-qla-top" class="print-only print-qla-section section-block"></section>
+      <section id="print-qla-papers" class="print-only print-qla-section section-block"></section>
+      <section id="print-qla-questions" class="print-only print-qla-section section-block"></section>
+      <section id="print-qla-classes" class="print-only print-qla-section section-block"></section>
+      <section id="print-qla-students" class="print-only print-qla-section section-block"></section>
+      <section id="print-qla-actions" class="print-only print-qla-section section-block"></section>
+
     </main>
 
     <!-- Export PDF Options Modal Dialog -->
@@ -1760,6 +1771,15 @@
             <label class="pdf-checkbox-label"><input type="checkbox" id="pdf-opt-distance" checked /><span>Distance from grade 5</span></label>
             <label class="pdf-checkbox-label"><input type="checkbox" id="pdf-opt-groups" checked /><span>Student groups</span></label>
             <label class="pdf-checkbox-label" id="pdf-movement-option" style="display: none;"><input type="checkbox" id="pdf-opt-movement" checked /><span>Movement and class balance</span></label>
+            <div id="pdf-qla-options" style="display: none;">
+              <label class="pdf-checkbox-label"><input type="checkbox" id="pdf-opt-qlaTop" checked /><span>QLA: Top 5 priorities</span></label>
+              <label class="pdf-checkbox-label"><input type="checkbox" id="pdf-opt-qlaPapers" checked /><span>QLA: Papers and skills</span></label>
+              <label class="pdf-checkbox-label"><input type="checkbox" id="pdf-opt-qlaQuestions" checked /><span>QLA: Questions</span></label>
+              <label class="pdf-checkbox-label"><input type="checkbox" id="pdf-opt-qlaClasses" checked /><span>QLA: Classes</span></label>
+              <label class="pdf-checkbox-label" style="margin-left: 22px;"><span>Classes to print</span><select id="pdf-qla-class-picker"><option value="ALL">All classes</option></select></label>
+              <label class="pdf-checkbox-label"><input type="checkbox" id="pdf-opt-qlaStudents" checked /><span>QLA: Students</span></label>
+              <label class="pdf-checkbox-label"><input type="checkbox" id="pdf-opt-qlaActions" checked /><span>QLA: All actions</span></label>
+            </div>
             <label class="pdf-checkbox-label"><input type="checkbox" id="pdf-opt-diagnostics" /><span>Diagnostics</span></label>
           </div>
 

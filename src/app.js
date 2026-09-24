@@ -7,7 +7,7 @@
 import * as XLSX from 'xlsx';
 import { exportPowerPointPresentation } from './pptxExport.js';
 import { generateSuggestedActions } from './actions.js';
-import { PDF_SECTIONS, selectedPdfSections, setPdfSectionVisibility, livePdfFilterSummary, matrixPrintColumns, createStudentNameRedactor } from './pdfExport.js';
+import { PDF_SECTIONS, selectedPdfSections, setPdfSectionVisibility, livePdfFilterSummary, matrixPrintColumns, createStudentNameRedactor, qlaPrintClasses, qlaPrintTiers, heatmapPrintColumns } from './pdfExport.js';
 import {
   computeHeadlines,
   filterRecords,
@@ -200,6 +200,12 @@ let pdfExportOptions = {
   distance: true,
   groups: true,
   movement: true,
+  qlaTop: true,
+  qlaPapers: true,
+  qlaQuestions: true,
+  qlaClasses: true,
+  qlaStudents: true,
+  qlaActions: true,
   diagnostics: false,
   hideNames: false,
   orientation: 'portrait'
@@ -2890,7 +2896,7 @@ function clearQlaData(options = { notify: false }) {
   if (tierHighlightsEl) tierHighlightsEl.innerHTML = '';
   const paperCardsGrid = document.getElementById('qla-paper-cards-grid');
   if (paperCardsGrid) paperCardsGrid.innerHTML = '';
-  const tableEl = document.getElementById('qla-class-paper-table');
+  const tableEl = document.querySelector('#pane-papers-skills #qla-class-paper-table');
   if (tableEl) tableEl.innerHTML = '';
   const highlightsListEl = document.getElementById('qla-class-highlights-list');
   if (highlightsListEl) highlightsListEl.innerHTML = '';
@@ -2926,7 +2932,7 @@ function clearQlaData(options = { notify: false }) {
   if (cClassSelect) cClassSelect.innerHTML = '';
   const cHeaderStats = document.getElementById('qla-class-header-stats');
   if (cHeaderStats) cHeaderStats.innerHTML = '';
-  const cPaperTable = document.getElementById('qla-class-paper-table');
+  const cPaperTable = document.querySelector('#pane-classes #qla-class-paper-table');
   if (cPaperTable) cPaperTable.innerHTML = '';
   const cPaperHighlights = document.getElementById('qla-class-paper-highlights');
   if (cPaperHighlights) cPaperHighlights.innerHTML = '';
@@ -3495,7 +3501,7 @@ function renderQlaPapersAndSkillsTab() {
   }
 
   // 5. Render Class by Paper Comparison Table
-  const tableEl = document.getElementById('qla-class-paper-table');
+  const tableEl = document.querySelector('#pane-papers-skills #qla-class-paper-table');
   if (tableEl) {
     const matrix = calculateClassPaperMatrix(papers, qlaTabFilters);
 
@@ -4062,7 +4068,7 @@ function renderQlaClassesTab() {
   }
 
   // 6. Render Paper Summary Table
-  const paperTableEl = document.getElementById('qla-class-paper-table');
+  const paperTableEl = document.querySelector('#pane-classes #qla-class-paper-table');
   if (paperTableEl) {
     paperTableEl.innerHTML = `
       <thead>
@@ -5389,6 +5395,12 @@ function updatePrintCoverAndContents() {
   const coverFilters = document.getElementById('print-cover-filters');
   if (coverFilters) coverFilters.textContent = livePdfFilterSummary(distFilters, selectedTopPerformersClass);
 
+  const coverQla = document.getElementById('print-cover-qla-title');
+  if (coverQla) {
+    coverQla.textContent = currentQlaData?.assessmentTitle || '';
+    coverQla.parentElement.style.display = currentQlaData?.papers?.length ? '' : 'none';
+  }
+
   const coverDate = document.getElementById('print-cover-date');
   if (coverDate) coverDate.textContent = ukDateToday;
 
@@ -5406,7 +5418,7 @@ function updatePrintCoverAndContents() {
   const contentsList = document.getElementById('print-contents-list');
   if (contentsList) {
     contentsList.innerHTML = '';
-    selectedPdfSections(pdfExportOptions, !!classListsData).forEach(section => {
+    selectedPdfSections(pdfExportOptions, !!classListsData, !!currentQlaData?.papers?.length).forEach(section => {
       const li = document.createElement('li');
       li.textContent = section.label;
       contentsList.appendChild(li);
@@ -5524,6 +5536,159 @@ function maskPrintStudentNames(sections) {
   return () => changed.forEach(([node, original]) => { node.nodeValue = original; });
 }
 
+function cloneQlaPrintContent(node) {
+  const copy = node.cloneNode(true);
+  copy.style.display = 'block';
+  copy.removeAttribute('id');
+  copy.querySelectorAll('[id]').forEach(child => child.removeAttribute('id'));
+  return copy;
+}
+
+function splitPrintHeatmap(pane) {
+  const wrapper = pane.querySelector('.qla-heatmap-scroll-container');
+  const table = wrapper?.querySelector('table');
+  const count = table?.tHead?.rows[0]?.cells.length || 0;
+  if (!wrapper || count <= 8) return;
+  const chunks = heatmapPrintColumns(count);
+  const replacement = document.createElement('div');
+  chunks.forEach((indices, index) => {
+    const part = document.createElement('div');
+    part.className = 'print-heatmap-chunk';
+    if (index > 0) {
+      const label = document.createElement('h4');
+      label.textContent = `Heatmap, classes ${index * 6 + 1}–${Math.min((index + 1) * 6, count - 2)}`;
+      part.appendChild(label);
+    }
+    const chunkTable = table.cloneNode(false);
+    for (const section of [table.tHead, table.tBodies[0]]) {
+      const copySection = section.cloneNode(false);
+      for (const row of section.rows) {
+        const copyRow = row.cloneNode(false);
+        indices.forEach(column => copyRow.appendChild(row.cells[column].cloneNode(true)));
+        copySection.appendChild(copyRow);
+      }
+      chunkTable.appendChild(copySection);
+    }
+    part.appendChild(chunkTable);
+    replacement.appendChild(part);
+  });
+  wrapper.replaceWith(replacement);
+}
+
+function preparePrintQlaSections() {
+  const papers = currentQlaData?.papers || [];
+  if (!papers.length) return;
+  const tiers = qlaPrintTiers(papers);
+  const selected = key => !!pdfExportOptions[key];
+  const targets = {
+    qlaTop: document.getElementById('print-qla-top'),
+    qlaPapers: document.getElementById('print-qla-papers'),
+    qlaQuestions: document.getElementById('print-qla-questions'),
+    qlaClasses: document.getElementById('print-qla-classes'),
+    qlaStudents: document.getElementById('print-qla-students'),
+    qlaActions: document.getElementById('print-qla-actions')
+  };
+  Object.values(targets).forEach(target => target?.replaceChildren());
+  const previous = {
+    paper: qlaQuestionsState.selectedPaper,
+    className: qlaClassesState.selectedClass,
+    tier: qlaTabFilters.tier,
+    hideNames: isNameHidden
+  };
+  const heading = (parent, label, level = 2) => {
+    const element = document.createElement(`h${level}`);
+    element.textContent = label;
+    parent.appendChild(element);
+  };
+  const appendRendered = (parent, node) => {
+    if (node) parent.appendChild(cloneQlaPrintContent(node));
+  };
+  try {
+    // Render full source names into the temporary blocks so the print redactor can
+    // replace every name with initials and class, including students outside the snapshot.
+    isNameHidden = false;
+    for (const [key, label] of [
+      ['qlaTop', 'QLA: Top 5 priorities'],
+      ['qlaPapers', 'QLA: Papers and skills'],
+      ['qlaQuestions', 'QLA: Questions'],
+      ['qlaClasses', 'QLA: Classes'],
+      ['qlaStudents', 'QLA: Students'],
+      ['qlaActions', 'QLA: All actions']
+    ]) {
+      if (selected(key)) heading(targets[key], label);
+    }
+    if (selected('qlaClasses')) {
+      const choice = document.getElementById('pdf-qla-class-picker')?.value || 'ALL';
+      for (const className of qlaPrintClasses(papers, choice)) {
+        const classPage = document.createElement('div');
+        classPage.className = 'print-qla-class-page';
+        heading(classPage, `Class ${className}`, 3);
+        for (const tier of tiers) {
+          currentQlaData.papers = papers.filter(paper => paper.tier === tier);
+          if (!qlaPrintClasses(currentQlaData.papers).includes(className)) continue;
+          qlaClassesState.selectedClass = className;
+          renderQlaClassesTab();
+          heading(classPage, tier, 4);
+          appendRendered(classPage, document.getElementById('pane-classes'));
+        }
+        targets.qlaClasses.appendChild(classPage);
+      }
+    }
+    for (const tier of tiers) {
+      currentQlaData.papers = papers.filter(paper => paper.tier === tier);
+      qlaTabFilters.tier = 'ALL';
+      if (selected('qlaTop') || selected('qlaActions')) {
+        renderQlaActionsTab();
+        const noActions = document.getElementById('qla-actions-card-top-priorities')?.style.display === 'none';
+        if (selected('qlaTop')) {
+          heading(targets.qlaTop, tier, 3);
+          if (noActions) heading(targets.qlaTop, 'No priorities currently identified.', 4);
+          else appendRendered(targets.qlaTop, document.getElementById('qla-actions-card-top-priorities'));
+        }
+        if (selected('qlaActions')) {
+          heading(targets.qlaActions, tier, 3);
+          if (noActions) heading(targets.qlaActions, 'No actions currently required.', 4);
+          else appendRendered(targets.qlaActions, document.getElementById('qla-all-actions-container'));
+        }
+      }
+      if (selected('qlaPapers')) {
+        renderQlaPapersAndSkillsTab();
+        heading(targets.qlaPapers, tier, 3);
+        appendRendered(targets.qlaPapers, document.getElementById('pane-papers-skills'));
+      }
+      if (selected('qlaStudents')) {
+        renderQlaStudentsTab();
+        heading(targets.qlaStudents, tier, 3);
+        appendRendered(targets.qlaStudents, document.getElementById('pane-students'));
+      }
+      if (selected('qlaQuestions')) {
+        for (const paper of currentQlaData.papers) {
+          qlaQuestionsState.selectedPaper = paper.sheetName;
+          renderQlaQuestionsTab();
+          const page = document.createElement('div');
+          page.className = 'print-qla-paper-page';
+          heading(page, `${paper.paper} (${tier})`, 3);
+          const pane = cloneQlaPrintContent(document.getElementById('pane-questions'));
+          splitPrintHeatmap(pane);
+          page.appendChild(pane);
+          targets.qlaQuestions.appendChild(page);
+        }
+      }
+    }
+  } finally {
+    currentQlaData.papers = papers;
+    qlaQuestionsState.selectedPaper = previous.paper;
+    qlaClassesState.selectedClass = previous.className;
+    qlaTabFilters.tier = previous.tier;
+    isNameHidden = previous.hideNames;
+    renderQlaPapersAndSkillsTab();
+    renderQlaQuestionsTab();
+    renderQlaClassesTab();
+    renderQlaStudentsTab();
+    renderQlaActionsTab();
+  }
+}
+
 function triggerPdfExport() {
   const modal = document.getElementById('export-pdf-modal');
   if (!allRecords.length) {
@@ -5543,9 +5708,9 @@ function triggerPdfExport() {
   pdfExportOptions.hideNames = !!document.getElementById('pdf-opt-hide-names')?.checked;
 
   const isLandscape = document.getElementById('pdf-orient-landscape')?.checked;
-  pdfExportOptions.orientation = (isLandscape || (pdfExportOptions.movement && classListsData)) ? 'landscape' : 'portrait';
+  pdfExportOptions.orientation = (isLandscape || (pdfExportOptions.movement && classListsData) || (pdfExportOptions.qlaQuestions && currentQlaData?.papers?.length)) ? 'landscape' : 'portrait';
 
-  const { selected, restore: restoreSections } = setPdfSectionVisibility(document, pdfExportOptions, !!classListsData);
+  const { selected, restore: restoreSections } = setPdfSectionVisibility(document, pdfExportOptions, !!classListsData, !!currentQlaData?.papers?.length);
 
   const diagnostics = document.getElementById('diagnostics-panel');
   const main = document.getElementById('dashboard-content');
@@ -5562,6 +5727,7 @@ function triggerPdfExport() {
     farthestNote.textContent = `Showing the top ${Math.min(20, total)} of ${total} students farthest from grade 5.`;
   }
   const restoreMatrix = pdfExportOptions.movement && classListsData ? preparePrintMovementMatrix() : () => {};
+  if (currentQlaData?.papers?.length) preparePrintQlaSections();
 
   let pageStyle = document.getElementById('print-page-style');
   if (!pageStyle) {
@@ -5579,6 +5745,8 @@ function triggerPdfExport() {
   const cleanup = () => {
     restoreNames();
     restoreMatrix();
+    PDF_SECTIONS.filter(section => section.needsQla)
+      .forEach(section => document.getElementById(section.id)?.replaceChildren());
     if (diagnosticsMarker.parentNode) diagnosticsMarker.replaceWith(diagnostics);
     restoreSections();
   };
@@ -5713,6 +5881,15 @@ export function initApp() {
     btnExportPdf.addEventListener('click', () => {
       const movementOption = document.getElementById('pdf-movement-option');
       if (movementOption) movementOption.style.display = classListsData ? 'flex' : 'none';
+      const qlaOptions = document.getElementById('pdf-qla-options');
+      if (qlaOptions) qlaOptions.style.display = currentQlaData?.papers?.length ? 'block' : 'none';
+      const qlaClassPicker = document.getElementById('pdf-qla-class-picker');
+      if (qlaClassPicker && currentQlaData?.papers?.length) {
+        const choice = qlaClassPicker.value;
+        qlaClassPicker.replaceChildren(new Option('All classes', 'ALL'));
+        qlaPrintClasses(currentQlaData.papers).forEach(name => qlaClassPicker.add(new Option(name, name)));
+        qlaClassPicker.value = qlaPrintClasses(currentQlaData.papers, choice).length ? choice : 'ALL';
+      }
       if (classListsData && document.getElementById('pdf-opt-movement')?.checked) {
         document.getElementById('pdf-orient-landscape').checked = true;
       }
