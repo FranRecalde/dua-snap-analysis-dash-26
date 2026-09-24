@@ -500,12 +500,14 @@ function renderDiagnostics(diagnostics, fileName, snapshotName) {
     }).join('');
     conflictsHtml = `
       <div class="diag-list-card" style="border-left: 4px solid #f59e0b;">
-        <div class="diag-list-title" style="color: #92400e;">
-          <span>⚠️</span> Status Conflicts with Class Lists (${classListsData.conflicts.length}) — Kept snapshot value
+        <div class="diag-list-title" style="color: #92400e; justify-content: space-between; flex-wrap: wrap;">
+          <span>⚠️ Status Conflicts with Class Lists (${classListsData.conflicts.length}) — Kept snapshot value</span>
+          <button type="button" class="btn-secondary-action btn-ignore-class-discrepancies">Ignore these discrepancies</button>
         </div>
-        <ul class="diag-list-items">
-          ${items}
-        </ul>
+        <details>
+          <summary>Show ${classListsData.conflicts.length} status conflict details</summary>
+          <ul class="diag-list-items">${items}</ul>
+        </details>
       </div>
     `;
   }
@@ -606,7 +608,7 @@ function renderDiagnostics(diagnostics, fileName, snapshotName) {
   content.innerHTML = `
     ${hasDiscrepancies ? `
       <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;">
-        <button type="button" class="btn-secondary-action" id="btn-ignore-class-discrepancies">${showDiscrepancies ? 'Ignore these discrepancies' : 'Show discrepancies'}</button>
+        <button type="button" class="btn-secondary-action btn-ignore-class-discrepancies">${showDiscrepancies ? 'Ignore these discrepancies' : 'Show discrepancies'}</button>
         <span style="font-size: 12px; color: var(--text-muted);">${showDiscrepancies ? 'Hides unmatched columns and class-list status notices only; snapshot values stay in use.' : 'Notices hidden for this upload.'}</span>
       </div>
     ` : ''}
@@ -699,10 +701,10 @@ function renderDiagnostics(diagnostics, fileName, snapshotName) {
     </div>
   `;
 
-  content.querySelector('#btn-ignore-class-discrepancies')?.addEventListener('click', () => {
+  content.querySelectorAll('.btn-ignore-class-discrepancies').forEach(button => button.addEventListener('click', () => {
     ignoredClassListDiscrepancies = !ignoredClassListDiscrepancies;
     renderDiagnostics(diagnostics, fileName, snapshotName);
-  });
+  }));
 
   panel.style.display = 'block';
 }
