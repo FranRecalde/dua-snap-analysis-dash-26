@@ -704,6 +704,7 @@ export function parseClassListFile(rawMatrix, fileName = '') {
     }
   });
 
+  const classListFields = new Set(columnMap.values());
   const defaultClassName = extractClassNameFromFileName(fileName);
   const students = [];
 
@@ -728,8 +729,8 @@ export function parseClassListFile(rawMatrix, fileName = '') {
     const admissionNumber = cleanText(rawObj.admissionNumber);
     const tutorGroup = cleanText(rawObj.tutorGroup);
     const sex = cleanSex(rawObj.sex);
-    const sen = cleanSEN(rawObj.sen);
-    const disadvantaged = cleanDisadvantaged(rawObj.disadvantaged);
+    const sen = classListFields.has('sen') ? cleanSEN(rawObj.sen) : '';
+    const disadvantaged = classListFields.has('disadvantaged') ? cleanDisadvantaged(rawObj.disadvantaged) : '';
     const eal = cleanEAL(rawObj.eal);
 
     let className = defaultClassName;
@@ -831,8 +832,15 @@ export function mergeClassListsIntoSnapshot(snapshotRecords, newClassStudents) {
     snapshotRecord.eal = newClassStudent.eal || 'No';
     snapshotRecord.hasNewClass = true;
 
+    // A class-list Y/Yes says only that the pupil has SEN; it does not distinguish Support from EHCP.
+    const classListSen = cleanText(newClassStudent.sen).toLowerCase();
+    const senConflict = ['y', 'yes', 'true'].includes(classListSen)
+      ? snapshotRecord.sen === 'No SEN'
+      : ['n', 'no', 'false'].includes(classListSen)
+        ? snapshotRecord.sen !== 'No SEN'
+        : newClassStudent.sen !== snapshotRecord.sen;
     // Check SEN conflict: keep snapshot value
-    if (newClassStudent.sen && snapshotRecord.sen && newClassStudent.sen !== snapshotRecord.sen) {
+    if (newClassStudent.sen && snapshotRecord.sen && senConflict) {
       conflicts.push({
         type: 'SEN Status',
         studentName: `${snapshotRecord.surname}, ${snapshotRecord.firstName}`,

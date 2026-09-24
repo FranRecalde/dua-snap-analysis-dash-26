@@ -21,6 +21,40 @@ describe('New Class Lists & Grouping Feature Tests', () => {
     expect(extractClassNameFromFileName('Class 10_Set_1.xlsx')).toBe('10 Set 1');
   });
 
+  it('treats a class-list SEN Y as agreeing with a specific snapshot SEN status', () => {
+    const snapshot = parseSnapshotSpreadsheet([
+      ['Surname', 'First Name', 'Admission No', 'Class', 'SEN'],
+      ['Fiction', 'Alex', 'X1', '10 A', 'SEN Support'],
+      ['Fiction', 'Bea', 'X2', '10 A', 'EHCP'],
+      ['Fiction', 'Cal', 'X3', '10 A', 'No SEN']
+    ]).records;
+    const classStudents = parseClassListFile([
+      ['Surname', 'First Name', 'Admission No', 'SEN'],
+      ['Fiction', 'Alex', 'X1', 'Y'],
+      ['Fiction', 'Bea', 'X2', 'Y'],
+      ['Fiction', 'Cal', 'X3', 'Y']
+    ], 'Year 11 A.csv').students;
+
+    const result = mergeClassListsIntoSnapshot(snapshot, classStudents);
+    expect(result.matchedCount).toBe(3);
+    expect(result.conflicts).toHaveLength(1);
+    expect(result.conflicts[0].studentName).toContain('Cal');
+    expect(result.conflicts[0].type).toBe('SEN Status');
+  });
+
+  it('does not invent status conflicts when class lists omit status columns', () => {
+    const snapshot = parseSnapshotSpreadsheet([
+      ['Surname', 'First Name', 'Admission No', 'Class', 'SEN', 'Disadvantaged'],
+      ['Fiction', 'Dee', 'X4', '10 B', 'SEN Support', 'Yes']
+    ]).records;
+    const classStudents = parseClassListFile([
+      ['Surname', 'First Name', 'Admission No'],
+      ['Fiction', 'Dee', 'X4']
+    ], 'Year 11 B.csv').students;
+
+    expect(mergeClassListsIntoSnapshot(snapshot, classStudents).conflicts).toHaveLength(0);
+  });
+
   it('matches students with invented data: 3 snapshot students, 2 class files, 1 only in snapshot, 1 only in class list, 1 name with trailing space', () => {
     // 1. Snapshot with 3 students:
     // - Student 1: John Smith with trailing space, in 10A

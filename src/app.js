@@ -108,6 +108,7 @@ let currentQlaFile = null;
 let isNewClassesEnabled = false;
 let stagedClassFiles = [];
 let classListsData = null; // { matchedCount, inSnapshotNotInNewClass, inNewClassesNoMockResult, conflicts, allNewClassStudents }
+let ignoredClassListDiscrepancies = false;
 let activeGrouping = 'current'; // 'current' (Year 10) or 'new' (Year 11)
 
 // Overview & Class Comparison State
@@ -392,6 +393,8 @@ function renderDiagnostics(diagnostics, fileName, snapshotName) {
   const statusBadge = document.getElementById('diagnostics-status-badge');
   const content = document.getElementById('diagnostics-content');
   if (!panel || !content) return;
+  const hasDiscrepancies = diagnostics.unmatchedColumns.length > 0 || (classListsData?.conflicts?.length || 0) > 0;
+  const showDiscrepancies = !ignoredClassListDiscrepancies;
 
   if (fileSub) {
     fileSub.textContent = snapshotName
@@ -491,7 +494,7 @@ function renderDiagnostics(diagnostics, fileName, snapshotName) {
 
   // List of status conflicts between snapshot and class lists
   let conflictsHtml = '';
-  if (classListsData && classListsData.conflicts && classListsData.conflicts.length > 0) {
+  if (showDiscrepancies && classListsData && classListsData.conflicts && classListsData.conflicts.length > 0) {
     const items = classListsData.conflicts.map(c => {
       return `<li><strong>${escapeHtml(c.studentName)}</strong> (${escapeHtml(c.className)}) · ${escapeHtml(c.type)}: Snapshot has &quot;<strong>${escapeHtml(c.snapshotValue)}</strong>&quot; vs Class List &quot;<strong>${escapeHtml(c.classListValue)}</strong>&quot; (kept snapshot value)</li>`;
     }).join('');
@@ -601,6 +604,12 @@ function renderDiagnostics(diagnostics, fileName, snapshotName) {
   }
 
   content.innerHTML = `
+    ${hasDiscrepancies ? `
+      <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;">
+        <button type="button" class="btn-secondary-action" id="btn-ignore-class-discrepancies">${showDiscrepancies ? 'Ignore these discrepancies' : 'Show discrepancies'}</button>
+        <span style="font-size: 12px; color: var(--text-muted);">${showDiscrepancies ? 'Hides unmatched columns and class-list status notices only; snapshot values stay in use.' : 'Notices hidden for this upload.'}</span>
+      </div>
+    ` : ''}
     <div class="diagnostic-grid">
       <div class="diagnostic-stat-box">
         <span class="diagnostic-stat-label">Rows Read</span>
@@ -620,11 +629,11 @@ function renderDiagnostics(diagnostics, fileName, snapshotName) {
         <span class="diagnostic-stat-sub">Recognised keywords</span>
       </div>
 
-      <div class="diagnostic-stat-box">
+      ${showDiscrepancies ? `<div class="diagnostic-stat-box">
         <span class="diagnostic-stat-label">Unmatched Columns</span>
         <span class="diagnostic-stat-val">${diagnostics.unmatchedColumns.length}</span>
         <span class="diagnostic-stat-sub">Unused custom headers</span>
-      </div>
+      </div>` : ''}
 
       <div class="diagnostic-stat-box">
         <span class="diagnostic-stat-label">U Grades</span>
@@ -668,7 +677,7 @@ function renderDiagnostics(diagnostics, fileName, snapshotName) {
         </div>
       </div>
 
-      <div class="diagnostic-columns-block" style="margin-top: 14px;">
+      ${showDiscrepancies ? `<div class="diagnostic-columns-block" style="margin-top: 14px;">
         <div class="diag-col-heading" style="color: ${diagnostics.unmatchedColumns.length > 0 ? '#92400e;' : 'var(--text-secondary);'}">
           <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"></circle>
@@ -680,7 +689,7 @@ function renderDiagnostics(diagnostics, fileName, snapshotName) {
         <div class="diag-chip-group">
           ${unmatchedChipsHtml}
         </div>
-      </div>
+      </div>` : ''}
 
       ${notSatHtml}
       ${missingEstimateHtml}
@@ -689,6 +698,11 @@ function renderDiagnostics(diagnostics, fileName, snapshotName) {
       ${qlaDiagHtml}
     </div>
   `;
+
+  content.querySelector('#btn-ignore-class-discrepancies')?.addEventListener('click', () => {
+    ignoredClassListDiscrepancies = !ignoredClassListDiscrepancies;
+    renderDiagnostics(diagnostics, fileName, snapshotName);
+  });
 
   panel.style.display = 'block';
 }
@@ -787,6 +801,7 @@ function setActiveGrouping(grouping) {
 function clearClassLists() {
   classListsData = null;
   stagedClassFiles = [];
+  ignoredClassListDiscrepancies = false;
   activeGrouping = 'current';
 
   const viewSwitchContainer = document.getElementById('view-switch-container');
@@ -2574,6 +2589,7 @@ function initNewClassesHandlers() {
 async function handleClassListFiles(files) {
   const errorEl = document.getElementById('class-lists-error');
   if (errorEl) errorEl.style.display = 'none';
+  ignoredClassListDiscrepancies = false;
 
   try {
     stagedClassFiles = [];
