@@ -13,16 +13,16 @@ export const GCSE_GRADES = ['U', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
  * Grade color palette for stacked bar chart and tags
  */
 export const GRADE_COLORS = {
-  'U': '#dc2626', // Red
-  '1': '#ea580c', // Orange-red
-  '2': '#f97316', // Orange
-  '3': '#f59e0b', // Amber
-  '4': '#eab308', // Yellow-gold (Standard Pass)
-  '5': '#84cc16', // Lime (Strong Pass)
-  '6': '#22c55e', // Green
-  '7': '#16a34a', // Emerald
-  '8': '#15803d', // Deep green
-  '9': '#2e6930'  // Dixons brand green (Top Grade)
+  'U': '#991b1b',
+  '1': '#991b1b',
+  '2': '#991b1b',
+  '3': '#9a3412',
+  '4': '#fbbf24',
+  '5': '#d9f99d',
+  '6': '#166534',
+  '7': '#166534',
+  '8': '#14532d',
+  '9': '#14532d'
 };
 
 /**

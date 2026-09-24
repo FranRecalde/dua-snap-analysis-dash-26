@@ -1839,25 +1839,62 @@ body {
 .grade-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 12px;
-  padding-top: 12px;
-  margin-top: 14px;
-  border-top: 1px dashed var(--border-color);
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 14px;
   font-size: 11.5px;
   color: var(--text-secondary);
 }
 
-.grade-legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+.grade-legend-title {
+  margin-right: 4px;
+  font-weight: 700;
 }
 
-.grade-legend-swatch {
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-  display: inline-block;
+.grade-badge,
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.65rem;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  vertical-align: middle;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.grade-badge {
+  min-width: 2.2rem;
+}
+
+.grade-badge-empty {
+  background: #374151;
+  color: #ffffff;
+}
+
+.status-badge-sen {
+  background: #1e3a5f;
+  color: #f8fafc;
+}
+
+.status-badge-ehcp {
+  background: #4c2d36;
+  color: #f8fafc;
+}
+
+.status-badge-disadvantaged {
+  background: #3b2850;
+  color: #f8fafc;
+}
+
+.status-badge-eal {
+  background: #245c4b;
+  color: #f8fafc;
 }
 
 /* Print Overrides for Overview Section */

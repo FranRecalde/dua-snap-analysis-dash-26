@@ -1062,10 +1062,11 @@ function renderCharts() {
           if (count > 0) {
             const pct = (count / satCount) * 100;
             const color = GRADE_COLORS[grade];
+            const textColor = grade === '4' || grade === '5' ? '#1c2421' : '#ffffff';
             const textDisplay = pct >= 8 ? grade : '';
             segmentsHtml += `
               <div class="stacked-segment"
-                   style="width: ${pct}%; background: ${color};"
+                   style="width: ${pct}%; background: ${color}; color: ${textColor};"
                    title="${escapeHtml(c.className)} — Grade ${grade}: ${count} student${count > 1 ? 's' : ''} (${pct.toFixed(1)}%)">
                 ${textDisplay}
               </div>
@@ -1088,6 +1089,11 @@ function renderCharts() {
     }).join('');
 
     gradeDistContainer.innerHTML = stackedRowsHtml;
+    const gradeLegend = document.getElementById('grade-legend-row');
+    if (gradeLegend) {
+      gradeLegend.innerHTML = `<span class="grade-legend-title">Grade colour key</span>` +
+        GCSE_GRADES.map(grade => renderGradeBadge(grade)).join('');
+    }
   }
 }
 
@@ -1121,12 +1127,12 @@ function getDisplayStudentName(record, isHidden, fallbackIndex) {
 }
 
 function renderGradeBadge(resultStr) {
-  const res = String(resultStr || '').trim();
-  if (res === 'Not sat' || res === '') {
-    return `<span class="grade-badge" style="background:#f3f4f6; color:#4b5563; border:1px solid #d1d5db;">Not sat</span>`;
+  const res = String(resultStr ?? '').trim();
+  if (!GRADE_COLORS[res]) {
+    return `<span class="grade-badge grade-badge-empty">${escapeHtml(res || 'Not sat')}</span>`;
   }
-  const color = GRADE_COLORS[res] || '#4b5563';
-  return `<span class="grade-badge" style="background:${color}; color:#ffffff; font-weight:700;">${escapeHtml(res)}</span>`;
+  const textColor = res === '4' || res === '5' ? '#1c2421' : '#ffffff';
+  return `<span class="grade-badge" style="background:${GRADE_COLORS[res]}; color:${textColor};">${escapeHtml(res)}</span>`;
 }
 
 function renderGapBadge(gap) {
@@ -1148,10 +1154,10 @@ function renderGapBadge(gap) {
 function renderSENBadge(sen) {
   const val = String(sen || 'No SEN').trim();
   if (val === 'EHCP') {
-    return `<span class="status-badge" style="background:#fef2f2; color:#991b1b; border:1px solid #fecaca; font-weight:700;">EHCP</span>`;
+    return '<span class="status-badge status-badge-ehcp">EHCP</span>';
   }
   if (val === 'SEN Support') {
-    return `<span class="status-badge" style="background:#eff6ff; color:#1e40af; border:1px solid #bfdbfe; font-weight:600;">SEN Support</span>`;
+    return '<span class="status-badge status-badge-sen">SEN Support</span>';
   }
   return `<span style="color:var(--text-muted); font-size:12.5px;">No SEN</span>`;
 }
@@ -1159,7 +1165,7 @@ function renderSENBadge(sen) {
 function renderDisadvBadge(disadvantaged) {
   const val = String(disadvantaged || 'No').trim();
   if (val === 'Yes') {
-    return `<span class="status-badge" style="background:#fdf4ff; color:#86198f; border:1px solid #f5d0fe; font-weight:700;">Yes</span>`;
+    return '<span class="status-badge status-badge-disadvantaged">Yes</span>';
   }
   return `<span style="color:var(--text-muted); font-size:12.5px;">No</span>`;
 }
@@ -1981,7 +1987,7 @@ function renderClassMismatchLists() {
               <td style="color: var(--text-muted); font-size: 12px;">${escapeHtml(s.admissionNumber || '-')}</td>
               <td>${renderSENBadge(s.sen)}</td>
               <td>${renderDisadvBadge(s.disadvantaged)}</td>
-              <td>${s.eal === 'Yes' ? '<span class="status-badge" style="background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; font-weight:700;">Yes</span>' : '<span style="color:var(--text-muted); font-size:12.5px;">No</span>'}</td>
+              <td>${s.eal === 'Yes' ? '<span class="status-badge status-badge-eal">Yes</span>' : '<span style="color:var(--text-muted); font-size:12.5px;">No</span>'}</td>
             </tr>
           `;
         }).join('');
@@ -2289,9 +2295,9 @@ function renderMovementAndBalanceSection() {
             <td><strong>${escapeHtml(displayName)}</strong></td>
             <td>${escapeHtml(st.className || st.currentClassName || '—')}</td>
             <td>${escapeHtml(st.newClassName || '—')}</td>
-            <td style="text-align: center;"><strong>${escapeHtml(String(resultDisplay))}</strong></td>
-            <td>${escapeHtml(senDisplay)}</td>
-            <td>${escapeHtml(disadvDisplay)}</td>
+            <td style="text-align: center;">${renderGradeBadge(resultDisplay)}</td>
+            <td>${renderSENBadge(senDisplay)}</td>
+            <td>${renderDisadvBadge(disadvDisplay)}</td>
             <td>${escapeHtml(ealDisplay)}</td>
           </tr>
         `;
@@ -5120,7 +5126,9 @@ function renderQlaActionsTab() {
       const classDisplay = st.activeClass || st.className || '—';
       const markDisplay = st.mark !== undefined ? `${st.mark} / ${st.maxMarks}` : '—';
       const pctDisplay = st.pct !== undefined ? `${st.pct}%` : '—';
-      const detailDisplay = st.detail || (st.mockResult ? `Grade: ${st.mockResult}` : '') || '';
+      const detailDisplay = st.detail
+        ? escapeHtml(st.detail)
+        : st.mockResult ? `Grade: ${renderGradeBadge(st.mockResult)}` : '';
 
       return `
         <tr>
@@ -5128,7 +5136,7 @@ function renderQlaActionsTab() {
           <td>${escapeHtml(classDisplay)}</td>
           ${hasMarks ? `<td style="text-align: right;">${escapeHtml(markDisplay)}</td>` : ''}
           ${hasPct ? `<td style="text-align: right;">${escapeHtml(pctDisplay)}</td>` : ''}
-          ${hasDetail ? `<td>${escapeHtml(detailDisplay)}</td>` : ''}
+          ${hasDetail ? `<td>${detailDisplay}</td>` : ''}
         </tr>
       `;
     }).join('');
