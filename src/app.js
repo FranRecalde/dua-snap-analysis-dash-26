@@ -40,6 +40,45 @@ import {
   mergeClassListsIntoSnapshot,
   extractClassNameFromFileName
 } from './parser.js';
+import {
+  processQlaWorkbookData,
+  matchQlaStudents,
+  generateQlaTemplateWorkbook
+} from './qlaService.js';
+import {
+  filterQlaStudents,
+  calculatePaperStats,
+  calculateCohortTierHighlights,
+  calculateClassPaperMatrix,
+  calculateClassPaperHighlights,
+  calculateQuestionStats,
+  calculateBestAndWorstQuestions,
+  calculateQuestionHeatmap,
+  calculateTopicAndAOSummaries,
+  getDictationAndTranslationQuestions,
+  calculateClassReport,
+  pickStrongestWeakestWithinTier,
+  calculateStudentSkillProfiles,
+  filterStudentProfiles,
+  calculateGrade4sByWeakestPaper,
+  calculateFarthestFrom5ByWeakestPaper,
+  calculateWeakQuestionsAnalysis,
+  calculateDemographicGroupGaps,
+  calculateMissedPapersList,
+  calculateStudentsReport
+} from './qlaStats.js';
+import {
+  generateQlaActions,
+  formatActionsAsEmailText,
+  DEFAULT_QLA_ACTION_THRESHOLDS
+} from './qlaActions.js';
+import {
+  DEFAULT_MOVEMENT_THRESHOLDS,
+  calculateMovementMatrix,
+  calculateNewClassProfiles,
+  calculateBalanceFlags,
+  compareClassNames
+} from './movementStats.js';
 
 // Configuration & Storage Keys
 export const STORAGE_PREFIX = 'class_snapshot_';
@@ -58,6 +97,10 @@ let currentSnapshotName = '';
 let currentDiagnostics = null;
 let isNameHidden = false;
 let currentPseudonymMaps = null;
+
+// QLA State (In-Memory Only - Privacy Compliant, Never in localStorage)
+let currentQlaData = null; // { rawSheets, fileName, assessmentTitle, papers, diagnostics }
+let currentQlaFile = null;
 
 // New Classes State (In-Memory Only - Never in localStorage)
 let isNewClassesEnabled = false;
@@ -78,6 +121,71 @@ let distFilters = {
   sen: 'ALL',
   disadvantaged: 'ALL',
   band: 'ALL'
+};
+
+// QLA Papers and Skills Tab State
+let qlaTabFilters = {
+  className: 'ALL',
+  tier: 'ALL',
+  sen: 'ALL',
+  disadvantaged: 'ALL'
+};
+
+// QLA Questions Tab State
+let qlaQuestionsState = {
+  selectedPaper: null,
+  sortKey: 'key',
+  sortDir: 'asc',
+  filters: {
+    className: 'ALL',
+    sen: 'ALL',
+    disadvantaged: 'ALL'
+  },
+  thresholds: {
+    strong: 70,
+    weak: 40
+  }
+};
+
+// QLA Classes Tab State
+let qlaClassesState = {
+  selectedClass: null,
+  sortKey: 'name',
+  sortDir: 'asc'
+};
+
+// QLA Students Tab State
+let qlaStudentsState = {
+  filters: {
+    className: 'ALL',
+    sen: 'ALL',
+    disadvantaged: 'ALL',
+    weakestPaper: 'ALL'
+  },
+  sortKey: 'name',
+  sortDir: 'asc',
+  expandedGrade4: new Set(),
+  expandedFarthest5: new Set(),
+  expandedWeakQuestions: new Set()
+};
+
+// QLA Actions Tab State
+let qlaActionsState = {
+  thresholds: {
+    ...DEFAULT_QLA_ACTION_THRESHOLDS
+  },
+  expandedActions: new Set(),
+  showAllActions: false
+};
+
+// Movement & Class Balance State
+let movementState = {
+  thresholds: {
+    ...DEFAULT_MOVEMENT_THRESHOLDS
+  },
+  selectedCell: null,
+  sortKey: 'className',
+  sortDir: 'asc'
 };
 
 // Student Groups & Top Performers State
@@ -240,6 +348,7 @@ async function handleLoginSubmit(e) {
 }
 
 function handleLogout() {
+  clearQlaData();
   sessionStorage.removeItem(SESSION_AUTH_KEY);
   checkAuth();
   showToast('Signed out.');
@@ -384,6 +493,99 @@ function renderDiagnostics(diagnostics, fileName, snapshotName) {
     `;
   }
 
+  // QLA Diagnostics Block
+  let qlaDiagHtml = '';
+  if (currentQlaData && currentQlaData.diagnostics) {
+    const qDiag = currentQlaData.diagnostics;
+
+    const papersRows = (qDiag.papersFound || []).map(p => `
+      <tr>
+        <td><strong>${escapeHtml(p.name)}</strong> (${escapeHtml(p.sheetName)})</td>
+        <td><span class="diag-pill-badge diag-pill-gray">${escapeHtml(p.tier)}</span></td>
+        <td><strong>${p.studentCount}</strong></td>
+        <td><span style="color: #166534; font-weight: 600;">${p.present}</span></td>
+        <td><span style="${p.absent > 0 ? 'color: #b45309; font-weight: 600;' : ''}">${p.absent}</span></td>
+        <td><span style="${p.incomplete > 0 ? 'color: #dc2626; font-weight: 600;' : ''}">${p.incomplete}</span></td>
+      </tr>
+    `).join('');
+
+    let unmatchedHtml = '';
+    if (qDiag.unmatchedCount > 0) {
+      const items = (qDiag.unmatchedStudents || []).map(s => {
+        return `<li><strong>${escapeHtml(s.name)}</strong> · Class: <code>${escapeHtml(s.className || 'None')}</code> · Paper: ${escapeHtml((s.papers || []).join(', '))} (Not in snapshot)</li>`;
+      }).join('');
+      unmatchedHtml = `
+        <div class="diag-list-card" style="border-left: 4px solid #f59e0b; margin-top: 14px;">
+          <div class="diag-list-title" style="color: #92400e;">
+            <span>⚠️</span> Unmatched to Snapshot (${qDiag.unmatchedCount}) — Listed with QLA class column
+          </div>
+          <ul class="diag-list-items">
+            ${items}
+          </ul>
+        </div>
+      `;
+    } else {
+      unmatchedHtml = `
+        <div style="margin-top: 10px; font-size: 13px; color: #166534; display: flex; align-items: center; gap: 6px;">
+          <span>✓</span> All ${qDiag.totalStudents} QLA student entries matched to snapshot.
+        </div>
+      `;
+    }
+
+    let warningsHtml = '';
+    if (qDiag.warnings && qDiag.warnings.length > 0) {
+      const items = qDiag.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('');
+      warningsHtml = `
+        <div class="diag-list-card" style="border-left: 4px solid #dc2626; margin-top: 14px;">
+          <div class="diag-list-title" style="color: #991b1b;">
+            <span>⚠️</span> QLA Parser Warnings (${qDiag.warnings.length})
+          </div>
+          <ul class="diag-list-items">
+            ${items}
+          </ul>
+        </div>
+      `;
+    }
+
+    qlaDiagHtml = `
+      <div class="diag-qla-block">
+        <div class="diag-qla-header">
+          <div class="diag-qla-title">
+            <span>📑</span> QLA
+          </div>
+          <div>
+            <span class="diag-pill-badge diag-pill-green">QLA Active</span>
+          </div>
+        </div>
+
+        <div style="font-size: 13.5px; margin-bottom: 12px; color: var(--text-primary);">
+          <strong>Assessment:</strong> ${escapeHtml(qDiag.assessmentTitle)}
+        </div>
+
+        <div class="table-responsive">
+          <table class="diag-qla-table">
+            <thead>
+              <tr>
+                <th>Paper Found</th>
+                <th>Tier</th>
+                <th>Students</th>
+                <th>Present</th>
+                <th>Absent</th>
+                <th>Incomplete</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${papersRows}
+            </tbody>
+          </table>
+        </div>
+
+        ${unmatchedHtml}
+        ${warningsHtml}
+      </div>
+    `;
+  }
+
   content.innerHTML = `
     <div class="diagnostic-grid">
       <div class="diagnostic-stat-box">
@@ -470,6 +672,7 @@ function renderDiagnostics(diagnostics, fileName, snapshotName) {
       ${missingEstimateHtml}
       ${duplicatesHtml}
       ${conflictsHtml}
+      ${qlaDiagHtml}
     </div>
   `;
 
@@ -533,12 +736,34 @@ function setActiveGrouping(grouping) {
 
   // Reset class dropdown filters so they don't hold an old class from the previous grouping
   distFilters.className = 'ALL';
+  qlaTabFilters.className = 'ALL';
+  qlaQuestionsState.filters.className = 'ALL';
+  qlaClassesState.selectedClass = null;
+  qlaStudentsState.filters.className = 'ALL';
   selectedTopPerformersClass = null;
+
+  // Reprocess QLA with activeGrouping if loaded
+  if (currentQlaData && currentQlaData.rawSheets) {
+    const reprocessed = processQlaWorkbookData(
+      currentQlaData.rawSheets,
+      currentQlaData.fileName,
+      allRecords,
+      activeGrouping
+    );
+    currentQlaData.papers = reprocessed.papers;
+    currentQlaData.diagnostics = reprocessed.diagnostics;
+    renderQlaPapersAndSkillsTab();
+    renderQlaQuestionsTab();
+    renderQlaClassesTab();
+    renderQlaStudentsTab();
+    renderQlaActionsTab();
+  }
 
   // Re-render all dashboard views
   renderOverviewSection();
   renderDistanceSection(true);
   renderStudentGroupsSection(true);
+  renderMovementAndBalanceSection();
 }
 
 /**
@@ -551,6 +776,7 @@ function clearClassLists() {
 
   const viewSwitchContainer = document.getElementById('view-switch-container');
   const mismatchSection = document.getElementById('section-class-mismatch-lists');
+  const movementSection = document.getElementById('section-movement-balance');
   const stagedWrapper = document.getElementById('staged-class-lists-wrapper');
   const clearBtn = document.getElementById('btn-clear-class-lists');
   const fileInput = document.getElementById('class-lists-input');
@@ -560,6 +786,8 @@ function clearClassLists() {
 
   if (viewSwitchContainer) viewSwitchContainer.style.display = 'none';
   if (mismatchSection) mismatchSection.style.display = 'none';
+  if (movementSection) movementSection.style.display = 'none';
+  movementState.selectedCell = null;
   if (stagedWrapper) {
     stagedWrapper.innerHTML = '';
     stagedWrapper.style.display = 'none';
@@ -1811,6 +2039,422 @@ function renderClassMismatchLists() {
 }
 
 /**
+ * Render Movement and Class Balance Section
+ */
+function renderMovementAndBalanceSection() {
+  const section = document.getElementById('section-movement-balance');
+  if (!section) return;
+
+  if (!classListsData) {
+    section.style.display = 'none';
+    return;
+  }
+
+  section.style.display = 'block';
+
+  // 1. Calculate Matrix, Profiles, and Flags
+  const matrix = calculateMovementMatrix(allRecords, classListsData);
+  const profilesData = calculateNewClassProfiles(allRecords, classListsData);
+  const flagsData = calculateBalanceFlags(profilesData.classProfiles, profilesData.cohortProfile, movementState.thresholds);
+
+  // Update header badges
+  const classesCountBadge = document.getElementById('movement-classes-count-badge');
+  if (classesCountBadge) {
+    const num = profilesData.classProfiles.length;
+    classesCountBadge.textContent = `${num} new class${num === 1 ? '' : 'es'}`;
+  }
+
+  const flagsCountBadge = document.getElementById('movement-flags-count-badge');
+  if (flagsCountBadge) {
+    flagsCountBadge.textContent = `${flagsData.count} flag${flagsData.count === 1 ? '' : 's'}`;
+    flagsCountBadge.style.background = flagsData.count > 0 ? '#fef3c7' : '#dcfce7';
+    flagsCountBadge.style.color = flagsData.count > 0 ? '#92400e' : '#15803d';
+  }
+
+  // 2. Render Balance Flags
+  const flagsList = document.getElementById('movement-balance-flags-list');
+  if (flagsList) {
+    if (!flagsData.hasFlags) {
+      flagsList.innerHTML = `
+        <div class="balance-flag-card empty-flag">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+          <span>No balance concerns at the current thresholds.</span>
+        </div>
+      `;
+    } else {
+      flagsList.innerHTML = flagsData.flags.map((flag, idx) => `
+        <div class="balance-flag-card" id="balance-flag-${idx}">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.2" fill="none" style="flex-shrink: 0; margin-top: 1px;"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <div>
+            <strong>${escapeHtml(flag.text)}</strong>
+            <div style="font-size: 11.5px; opacity: 0.9; margin-top: 2px;">${escapeHtml(flag.why)}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+  }
+
+  // 3. Render Movement Matrix Table
+  const matrixContainer = document.getElementById('movement-matrix-container');
+  if (matrixContainer && matrix) {
+    const colHeaders = matrix.newClasses.map(nc => `<th>${escapeHtml(nc)}</th>`).join('');
+
+    // Rows
+    const rowsHtml = matrix.currentClasses.map(cur => {
+      const cellsHtml = matrix.newClasses.map(nw => {
+        const students = matrix.grid[cur][nw] || [];
+        const count = students.length;
+        const isClickable = count > 0;
+        const isSelected = movementState.selectedCell &&
+          movementState.selectedCell.type === 'matrix' &&
+          movementState.selectedCell.rowKey === cur &&
+          movementState.selectedCell.colKey === nw;
+
+        let style = '';
+        if (count > 0) {
+          const ratio = Math.min(1, count / matrix.maxCellCount);
+          const bgOpacity = 0.12 + 0.65 * ratio;
+          style = `background: rgba(46, 105, 48, ${bgOpacity.toFixed(2)}); color: ${bgOpacity > 0.45 ? '#ffffff' : '#1e3a24'}; font-weight: 600;`;
+        }
+
+        return `
+          <td class="movement-matrix-cell ${isClickable ? 'clickable' : ''} ${isSelected ? 'active-selected' : ''}"
+              style="${style}"
+              data-cell-type="matrix"
+              data-row="${escapeHtml(cur)}"
+              data-col="${escapeHtml(nw)}">
+            ${count > 0 ? count : '<span style="color:#cbd5e1;">-</span>'}
+          </td>
+        `;
+      }).join('');
+
+      const notInNewStudents = matrix.notInNewByCurrent[cur] || [];
+      const notInNewCount = notInNewStudents.length;
+      const isNotInNewSelected = movementState.selectedCell &&
+        movementState.selectedCell.type === 'notInNew' &&
+        movementState.selectedCell.rowKey === cur;
+
+      return `
+        <tr>
+          <td><strong>${escapeHtml(cur)}</strong></td>
+          ${cellsHtml}
+          <td class="movement-matrix-cell ${notInNewCount > 0 ? 'clickable' : ''} ${isNotInNewSelected ? 'active-selected' : ''}"
+              style="${notInNewCount > 0 ? 'background: #fff1f2; color: #9f1239; font-weight: 600;' : ''}"
+              data-cell-type="notInNew"
+              data-row="${escapeHtml(cur)}">
+            ${notInNewCount > 0 ? notInNewCount : '<span style="color:#cbd5e1;">-</span>'}
+          </td>
+          <td class="movement-col-total">
+            ${matrix.rowTotals[cur]}
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    // Extra Row: "New to the cohort (no mock result)"
+    const newToCohortCells = matrix.newClasses.map(nw => {
+      const students = matrix.newToCohortByNew[nw] || [];
+      const count = students.length;
+      const isSelected = movementState.selectedCell &&
+        movementState.selectedCell.type === 'newCohort' &&
+        movementState.selectedCell.colKey === nw;
+
+      return `
+        <td class="movement-matrix-cell ${count > 0 ? 'clickable' : ''} ${isSelected ? 'active-selected' : ''}"
+            style="${count > 0 ? 'background: #fdf4ff; color: #86198f; font-weight: 600;' : ''}"
+            data-cell-type="newCohort"
+            data-col="${escapeHtml(nw)}">
+          ${count > 0 ? count : '<span style="color:#cbd5e1;">-</span>'}
+        </td>
+      `;
+    }).join('');
+
+    // Total Row
+    const totalColsHtml = matrix.newClasses.map(nw => `
+      <td class="movement-col-total">${matrix.colTotals[nw]}</td>
+    `).join('');
+
+    matrixContainer.innerHTML = `
+      <table class="movement-matrix-table">
+        <thead>
+          <tr>
+            <th style="min-width: 130px;">Current \\ New</th>
+            ${colHeaders}
+            <th style="background: #fff1f2; color: #9f1239;">Not in a new class</th>
+            <th class="movement-col-total">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+          <tr class="movement-row-new-cohort">
+            <td><em>New to the cohort (no mock result)</em></td>
+            ${newToCohortCells}
+            <td style="color:#cbd5e1;">-</td>
+            <td class="movement-col-total">${matrix.newToCohortRowTotal}</td>
+          </tr>
+          <tr class="movement-row-total">
+            <td>Total</td>
+            ${totalColsHtml}
+            <td class="movement-col-total" style="color: #9f1239;">${matrix.notInNewColTotal}</td>
+            <td class="movement-col-total" style="background: #e2e8f0; font-size: 13px;">${matrix.grandTotal}</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+
+    // Attach click events on cells
+    matrixContainer.querySelectorAll('.movement-matrix-cell.clickable').forEach(cell => {
+      cell.onclick = () => {
+        const type = cell.getAttribute('data-cell-type');
+        const row = cell.getAttribute('data-row');
+        const col = cell.getAttribute('data-col');
+
+        if (movementState.selectedCell &&
+            movementState.selectedCell.type === type &&
+            movementState.selectedCell.rowKey === row &&
+            movementState.selectedCell.colKey === col) {
+          movementState.selectedCell = null;
+        } else {
+          movementState.selectedCell = { type, rowKey: row, colKey: col };
+        }
+        renderMovementAndBalanceSection();
+      };
+    });
+  }
+
+  // 4. Render Drilldown Drawer
+  const drawer = document.getElementById('movement-cell-drilldown-drawer');
+  if (drawer) {
+    if (!movementState.selectedCell) {
+      drawer.style.display = 'none';
+      drawer.innerHTML = '';
+    } else {
+      let studentList = [];
+      let label = '';
+      const sc = movementState.selectedCell;
+
+      if (sc.type === 'matrix') {
+        studentList = (matrix.grid[sc.rowKey] && matrix.grid[sc.rowKey][sc.colKey]) || [];
+        label = `Students moving from ${sc.rowKey} to ${sc.colKey}`;
+      } else if (sc.type === 'notInNew') {
+        studentList = matrix.notInNewByCurrent[sc.rowKey] || [];
+        label = `Students in ${sc.rowKey} not allocated to any new class`;
+      } else if (sc.type === 'newCohort') {
+        studentList = matrix.newToCohortByNew[sc.colKey] || [];
+        label = `Students new to the cohort allocated to ${sc.colKey}`;
+      }
+
+      drawer.style.display = 'block';
+      const studentRows = studentList.map((st, idx) => {
+        const displayName = getDisplayStudentName(st, isNameHidden, idx + 1);
+        const resultDisplay = st.displayResult || (st.result !== null && st.result !== undefined ? st.result : '—');
+        const senDisplay = st.sen || 'No SEN';
+        const disadvDisplay = st.disadvantaged || 'No';
+        const ealDisplay = st.eal || 'No';
+
+        return `
+          <tr>
+            <td><strong>${escapeHtml(displayName)}</strong></td>
+            <td>${escapeHtml(st.className || st.currentClassName || '—')}</td>
+            <td>${escapeHtml(st.newClassName || '—')}</td>
+            <td style="text-align: center;"><strong>${escapeHtml(String(resultDisplay))}</strong></td>
+            <td>${escapeHtml(senDisplay)}</td>
+            <td>${escapeHtml(disadvDisplay)}</td>
+            <td>${escapeHtml(ealDisplay)}</td>
+          </tr>
+        `;
+      }).join('');
+
+      drawer.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <div style="font-weight: 700; font-size: 13.5px; color: var(--brand-dark);">
+            ${escapeHtml(label)} (${studentList.length} student${studentList.length === 1 ? '' : 's'}):
+          </div>
+          <button type="button" class="btn-secondary-action" id="btn-close-movement-drawer" style="padding: 2px 8px; font-size: 11px;">
+            Close ✕
+          </button>
+        </div>
+        <div class="table-responsive" style="max-height: 240px; overflow-y: auto;">
+          <table class="data-table" style="font-size: 12px; margin-bottom: 0;">
+            <thead>
+              <tr>
+                <th>Student Name</th>
+                <th>Year 10 Class</th>
+                <th>Year 11 Class</th>
+                <th style="text-align: center;">Mock Result</th>
+                <th>SEN</th>
+                <th>Disadvantaged</th>
+                <th>EAL</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${studentRows}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      const btnClose = document.getElementById('btn-close-movement-drawer');
+      if (btnClose) {
+        btnClose.onclick = () => {
+          movementState.selectedCell = null;
+          renderMovementAndBalanceSection();
+        };
+      }
+    }
+  }
+
+  // 5. Render New Class Profile Table
+  const tbody = document.getElementById('new-class-profile-tbody');
+  const tfoot = document.getElementById('new-class-profile-tfoot');
+  if (tbody && profilesData) {
+    const sortedProfiles = [...profilesData.classProfiles].sort((a, b) => {
+      let valA, valB;
+      switch (movementState.sortKey) {
+        case 'totalStudents': valA = a.totalStudents; valB = b.totalStudents; break;
+        case 'studentsWithResults': valA = a.studentsWithResults; valB = b.studentsWithResults; break;
+        case 'averageGrade': valA = a.averageGrade ?? -1; valB = b.averageGrade ?? -1; break;
+        case 'pctGrade5Plus': valA = a.pctGrade5Plus ?? -1; valB = b.pctGrade5Plus ?? -1; break;
+        case 'atOrAbove5': valA = a.distanceBands.atOrAbove5; valB = b.distanceBands.atOrAbove5; break;
+        case 'oneAway': valA = a.distanceBands.oneAway; valB = b.distanceBands.oneAway; break;
+        case 'twoAway': valA = a.distanceBands.twoAway; valB = b.distanceBands.twoAway; break;
+        case 'threeOrMoreAway': valA = a.distanceBands.threeOrMoreAway; valB = b.distanceBands.threeOrMoreAway; break;
+        case 'pctSenSupport': valA = a.pctSenSupport; valB = b.pctSenSupport; break;
+        case 'pctDisadvantaged': valA = a.pctDisadvantaged; valB = b.pctDisadvantaged; break;
+        case 'pctEAL': valA = a.pctEAL; valB = b.pctEAL; break;
+        case 'high': valA = a.priorAttainment.high; valB = b.priorAttainment.high; break;
+        case 'middle': valA = a.priorAttainment.middle; valB = b.priorAttainment.middle; break;
+        case 'low': valA = a.priorAttainment.low; valB = b.priorAttainment.low; break;
+        case 'noKs2': valA = a.priorAttainment.noKs2; valB = b.priorAttainment.noKs2; break;
+        default:
+          return compareClassNames(a.className, b.className) * (movementState.sortDir === 'desc' ? -1 : 1);
+      }
+      if (valA === valB) return compareClassNames(a.className, b.className);
+      return (valA < valB ? -1 : 1) * (movementState.sortDir === 'desc' ? -1 : 1);
+    });
+
+    // Calculate extremes for highlights
+    const calculateExtremes = (keys, profiles) => {
+      const ext = {};
+      keys.forEach(k => {
+        let max = -Infinity;
+        let min = Infinity;
+        profiles.forEach(p => {
+          let val;
+          if (k === 'averageGrade') val = p.averageGrade;
+          else if (k === 'pctGrade5Plus') val = p.pctGrade5Plus;
+          else if (['atOrAbove5', 'oneAway', 'twoAway', 'threeOrMoreAway'].includes(k)) val = p.distanceBands[k];
+          else if (['pctSenSupport', 'pctDisadvantaged', 'pctEAL'].includes(k)) val = p[k];
+          else if (['high', 'middle', 'low', 'noKs2'].includes(k)) val = p.priorAttainment[k];
+          else val = p[k];
+
+          if (val !== null && val !== undefined && !isNaN(val)) {
+            if (val > max) max = val;
+            if (val < min) min = val;
+          }
+        });
+        if (max !== -Infinity && min !== Infinity && max !== min) {
+          ext[k] = { max, min };
+        }
+      });
+      return ext;
+    };
+
+    const metricKeys = [
+      'totalStudents', 'averageGrade', 'pctGrade5Plus',
+      'atOrAbove5', 'oneAway', 'twoAway', 'threeOrMoreAway',
+      'pctSenSupport', 'pctDisadvantaged', 'pctEAL',
+      'high', 'middle', 'low', 'noKs2'
+    ];
+    const extremes = calculateExtremes(metricKeys, profilesData.classProfiles);
+
+    const getExtremeClass = (key, val) => {
+      if (val === null || val === undefined || !extremes[key]) return '';
+      if (val === extremes[key].max) return 'cell-highest';
+      if (val === extremes[key].min) return 'cell-lowest';
+      return '';
+    };
+
+    tbody.innerHTML = sortedProfiles.map(p => {
+      const avgGradeStr = p.averageGrade !== null ? p.averageGrade.toFixed(2) : '—';
+      const pct5Str = p.pctGrade5Plus !== null ? `${p.pctGrade5Plus.toFixed(1)}%` : '—';
+
+      return `
+        <tr>
+          <td><strong>${escapeHtml(p.className)}</strong></td>
+          <td style="text-align: right;" class="${getExtremeClass('totalStudents', p.totalStudents)}">${p.totalStudents}</td>
+          <td><span style="font-size: 11.5px; color: var(--text-muted);">${escapeHtml(p.resultRatioText)}</span></td>
+          <td style="text-align: right;" class="${getExtremeClass('averageGrade', p.averageGrade)}">${avgGradeStr}</td>
+          <td style="text-align: right;" class="${getExtremeClass('pctGrade5Plus', p.pctGrade5Plus)}">${pct5Str}</td>
+          <td style="text-align: right;" class="${getExtremeClass('atOrAbove5', p.distanceBands.atOrAbove5)}">${p.distanceBands.atOrAbove5}</td>
+          <td style="text-align: right;" class="${getExtremeClass('oneAway', p.distanceBands.oneAway)}">${p.distanceBands.oneAway}</td>
+          <td style="text-align: right;" class="${getExtremeClass('twoAway', p.distanceBands.twoAway)}">${p.distanceBands.twoAway}</td>
+          <td style="text-align: right;" class="${getExtremeClass('threeOrMoreAway', p.distanceBands.threeOrMoreAway)}">${p.distanceBands.threeOrMoreAway}</td>
+          <td style="text-align: right;" class="${getExtremeClass('pctSenSupport', p.pctSenSupport)}">${p.pctSenSupport.toFixed(1)}%</td>
+          <td style="text-align: right;" class="${getExtremeClass('pctDisadvantaged', p.pctDisadvantaged)}">${p.pctDisadvantaged.toFixed(1)}%</td>
+          <td style="text-align: right;" class="${getExtremeClass('pctEAL', p.pctEAL)}">${p.pctEAL.toFixed(1)}%</td>
+          <td style="text-align: right;" class="${getExtremeClass('high', p.priorAttainment.high)}">${p.priorAttainment.high}</td>
+          <td style="text-align: right;" class="${getExtremeClass('middle', p.priorAttainment.middle)}">${p.priorAttainment.middle}</td>
+          <td style="text-align: right;" class="${getExtremeClass('low', p.priorAttainment.low)}">${p.priorAttainment.low}</td>
+          <td style="text-align: right;" class="${getExtremeClass('noKs2', p.priorAttainment.noKs2)}">${p.priorAttainment.noKs2}</td>
+        </tr>
+      `;
+    }).join('');
+
+    // Cohort Footer Row
+    if (tfoot && profilesData.cohortProfile) {
+      const cp = profilesData.cohortProfile;
+      const cohortAvgStr = cp.averageGrade !== null ? cp.averageGrade.toFixed(2) : '—';
+      const cohortPct5Str = cp.pctGrade5Plus !== null ? `${cp.pctGrade5Plus.toFixed(1)}%` : '—';
+
+      tfoot.innerHTML = `
+        <tr>
+          <td><strong>Cohort Total / Average</strong></td>
+          <td style="text-align: right;"><strong>${cp.totalStudents}</strong></td>
+          <td><span style="font-size: 11.5px; font-weight: 600;">${escapeHtml(cp.resultRatioText)}</span></td>
+          <td style="text-align: right;"><strong>${cohortAvgStr}</strong></td>
+          <td style="text-align: right;"><strong>${cohortPct5Str}</strong></td>
+          <td style="text-align: right;"><strong>${cp.distanceBands.atOrAbove5}</strong></td>
+          <td style="text-align: right;"><strong>${cp.distanceBands.oneAway}</strong></td>
+          <td style="text-align: right;"><strong>${cp.distanceBands.twoAway}</strong></td>
+          <td style="text-align: right;"><strong>${cp.distanceBands.threeOrMoreAway}</strong></td>
+          <td style="text-align: right;"><strong>${cp.pctSenSupport.toFixed(1)}%</strong></td>
+          <td style="text-align: right;"><strong>${cp.pctDisadvantaged.toFixed(1)}%</strong></td>
+          <td style="text-align: right;"><strong>${cp.pctEAL.toFixed(1)}%</strong></td>
+          <td style="text-align: right;"><strong>${cp.priorAttainment.high}</strong></td>
+          <td style="text-align: right;"><strong>${cp.priorAttainment.middle}</strong></td>
+          <td style="text-align: right;"><strong>${cp.priorAttainment.low}</strong></td>
+          <td style="text-align: right;"><strong>${cp.priorAttainment.noKs2}</strong></td>
+        </tr>
+      `;
+    }
+
+    // Attach sort listeners on table headers
+    const tableEl = document.getElementById('new-class-profile-table');
+    if (tableEl) {
+      tableEl.querySelectorAll('th[data-sort]').forEach(th => {
+        const sortKey = th.getAttribute('data-sort');
+        const icon = th.querySelector('.sort-icon');
+        if (icon) {
+          icon.textContent = movementState.sortKey === sortKey
+            ? (movementState.sortDir === 'asc' ? '▲' : '▼')
+            : '↕';
+        }
+        th.onclick = () => {
+          if (movementState.sortKey === sortKey) {
+            movementState.sortDir = movementState.sortDir === 'asc' ? 'desc' : 'asc';
+          } else {
+            movementState.sortKey = sortKey;
+            movementState.sortDir = 'asc';
+          }
+          renderMovementAndBalanceSection();
+        };
+      });
+    }
+  }
+}
+
+/**
  * Setup event listeners for "Are students in new classes?" panel and class list uploads
  */
 function initNewClassesHandlers() {
@@ -2108,8 +2752,2527 @@ function confirmAndApplyClassLists() {
   renderOverviewSection();
   renderDistanceSection(true);
   renderStudentGroupsSection(true);
+  renderMovementAndBalanceSection();
+
+  if (currentQlaData && currentQlaData.rawSheets) {
+    const reprocessed = processQlaWorkbookData(
+      currentQlaData.rawSheets,
+      currentQlaData.fileName,
+      allRecords,
+      activeGrouping
+    );
+    currentQlaData.papers = reprocessed.papers;
+    currentQlaData.diagnostics = reprocessed.diagnostics;
+    qlaClassesState.selectedClass = null;
+    qlaStudentsState.filters.className = 'ALL';
+    renderQlaPapersAndSkillsTab();
+    renderQlaQuestionsTab();
+    renderQlaClassesTab();
+    renderQlaStudentsTab();
+    renderQlaActionsTab();
+  }
 
   showToast(`Matched ${mergeResult.matchedCount} students to Year 11 classes.`);
+}
+
+/**
+ * Enable QLA Upload Card (called when snapshot is loaded)
+ */
+function enableQlaCard() {
+  const panelQla = document.getElementById('panel-qla');
+  const disabledNote = document.getElementById('qla-disabled-note');
+  const browseBtn = document.getElementById('btn-browse-qla');
+  const fileInput = document.getElementById('qla-file-input');
+
+  if (panelQla) {
+    panelQla.classList.remove('disabled');
+    panelQla.removeAttribute('aria-disabled');
+  }
+  if (disabledNote) disabledNote.style.display = 'none';
+  if (browseBtn) browseBtn.removeAttribute('disabled');
+  if (fileInput) fileInput.removeAttribute('disabled');
+}
+
+/**
+ * Disable QLA Upload Card (called when no snapshot is loaded)
+ */
+function disableQlaCard() {
+  const panelQla = document.getElementById('panel-qla');
+  const disabledNote = document.getElementById('qla-disabled-note');
+  const browseBtn = document.getElementById('btn-browse-qla');
+  const fileInput = document.getElementById('qla-file-input');
+  const loadedInfo = document.getElementById('qla-loaded-info');
+  const btnContainer = document.getElementById('qla-upload-btn-container');
+  const subText = document.getElementById('qla-sub-text');
+
+  if (panelQla) {
+    panelQla.classList.add('disabled');
+    panelQla.setAttribute('aria-disabled', 'true');
+  }
+  if (disabledNote) disabledNote.style.display = 'inline-block';
+  if (browseBtn) browseBtn.setAttribute('disabled', 'true');
+  if (fileInput) {
+    fileInput.setAttribute('disabled', 'true');
+    fileInput.value = '';
+  }
+  if (loadedInfo) loadedInfo.style.display = 'none';
+  if (btnContainer) btnContainer.style.display = 'block';
+  if (subText) subText.style.display = 'block';
+}
+
+/**
+ * Update QLA Card to loaded state
+ */
+function updateQlaCardLoaded(qlaResult) {
+  const loadedInfo = document.getElementById('qla-loaded-info');
+  const btnContainer = document.getElementById('qla-upload-btn-container');
+  const subText = document.getElementById('qla-sub-text');
+  const titleEl = document.getElementById('qla-assessment-title');
+  const countEl = document.getElementById('qla-papers-count');
+
+  if (btnContainer) btnContainer.style.display = 'none';
+  if (subText) subText.style.display = 'none';
+  if (titleEl) titleEl.textContent = qlaResult.assessmentTitle;
+  if (countEl) {
+    const numPapers = qlaResult.papers.length;
+    countEl.textContent = `${numPapers} ${numPapers === 1 ? 'paper' : 'papers'} loaded`;
+  }
+  if (loadedInfo) loadedInfo.style.display = 'block';
+}
+
+/**
+ * Clear QLA Data from memory and reset UI (PRIVACY: In-Memory Only!)
+ */
+function clearQlaData(options = { notify: false }) {
+  currentQlaData = null;
+  currentQlaFile = null;
+
+  const fileInput = document.getElementById('qla-file-input');
+  if (fileInput) fileInput.value = '';
+
+  const loadedInfo = document.getElementById('qla-loaded-info');
+  const btnContainer = document.getElementById('qla-upload-btn-container');
+  const subText = document.getElementById('qla-sub-text');
+  const errorEl = document.getElementById('qla-upload-error');
+  const insightsSection = document.getElementById('section-qla-insights');
+
+  if (loadedInfo) loadedInfo.style.display = 'none';
+  if (btnContainer) btnContainer.style.display = 'block';
+  if (subText) subText.style.display = 'block';
+  if (errorEl) errorEl.style.display = 'none';
+  if (insightsSection) insightsSection.style.display = 'none';
+
+  if (allRecords && allRecords.length > 0) {
+    enableQlaCard();
+  } else {
+    disableQlaCard();
+  }
+
+  // Reset tab filters and clear tab elements
+  qlaTabFilters = { className: 'ALL', tier: 'ALL', sen: 'ALL', disadvantaged: 'ALL' };
+  const filterClass = document.getElementById('qla-filter-class');
+  const filterTier = document.getElementById('qla-filter-tier');
+  const filterSen = document.getElementById('qla-filter-sen');
+  const filterDis = document.getElementById('qla-filter-disadvantaged');
+  if (filterClass) filterClass.value = 'ALL';
+  if (filterTier) filterTier.value = 'ALL';
+  if (filterSen) filterSen.value = 'ALL';
+  if (filterDis) filterDis.value = 'ALL';
+
+  const tierHighlightsEl = document.getElementById('qla-tier-highlights');
+  if (tierHighlightsEl) tierHighlightsEl.innerHTML = '';
+  const paperCardsGrid = document.getElementById('qla-paper-cards-grid');
+  if (paperCardsGrid) paperCardsGrid.innerHTML = '';
+  const tableEl = document.getElementById('qla-class-paper-table');
+  if (tableEl) tableEl.innerHTML = '';
+  const highlightsListEl = document.getElementById('qla-class-highlights-list');
+  if (highlightsListEl) highlightsListEl.innerHTML = '';
+
+  // Questions tab reset
+  qlaQuestionsState.selectedPaper = null;
+  qlaQuestionsState.filters = { className: 'ALL', sen: 'ALL', disadvantaged: 'ALL' };
+  const qFilterClass = document.getElementById('qla-q-filter-class');
+  const qFilterSen = document.getElementById('qla-q-filter-sen');
+  const qFilterDis = document.getElementById('qla-q-filter-disadvantaged');
+  if (qFilterClass) qFilterClass.value = 'ALL';
+  if (qFilterSen) qFilterSen.value = 'ALL';
+  if (qFilterDis) qFilterDis.value = 'ALL';
+
+  const qQualityFlags = document.getElementById('qla-questions-quality-flags');
+  if (qQualityFlags) qQualityFlags.innerHTML = '';
+  const qDictationCard = document.getElementById('qla-dictation-translation-card');
+  if (qDictationCard) qDictationCard.innerHTML = '';
+  const qBestWorst = document.getElementById('qla-best-worst-container');
+  if (qBestWorst) qBestWorst.innerHTML = '';
+  const qTable = document.getElementById('qla-question-table');
+  if (qTable) qTable.innerHTML = '';
+  const qHeatmap = document.getElementById('qla-question-heatmap-table');
+  if (qHeatmap) qHeatmap.innerHTML = '';
+  const qTopicAo = document.getElementById('qla-topic-ao-container');
+  if (qTopicAo) qTopicAo.innerHTML = '';
+
+  // Classes tab reset
+  qlaClassesState.selectedClass = null;
+  qlaClassesState.sortKey = 'name';
+  qlaClassesState.sortDir = 'asc';
+  const cClassSelect = document.getElementById('qla-classes-class-select');
+  if (cClassSelect) cClassSelect.innerHTML = '';
+  const cHeaderStats = document.getElementById('qla-class-header-stats');
+  if (cHeaderStats) cHeaderStats.innerHTML = '';
+  const cPaperTable = document.getElementById('qla-class-paper-table');
+  if (cPaperTable) cPaperTable.innerHTML = '';
+  const cPaperHighlights = document.getElementById('qla-class-paper-highlights');
+  if (cPaperHighlights) cPaperHighlights.innerHTML = '';
+  const cBestWorst = document.getElementById('qla-class-best-worst-card');
+  if (cBestWorst) cBestWorst.innerHTML = '';
+  const cFurthestBelow = document.getElementById('qla-class-furthest-below-card');
+  if (cFurthestBelow) cFurthestBelow.innerHTML = '';
+  const cBeatingCohort = document.getElementById('qla-class-beating-cohort-card');
+  if (cBeatingCohort) cBeatingCohort.innerHTML = '';
+  const cStudentTable = document.getElementById('qla-class-student-table');
+  if (cStudentTable) cStudentTable.innerHTML = '';
+
+  // Actions tab reset
+  qlaActionsState.expandedActions.clear();
+  qlaActionsState.showAllActions = false;
+  const aListTop = document.getElementById('qla-top-priorities-list');
+  if (aListTop) aListTop.innerHTML = '';
+  const aCardTop = document.getElementById('qla-actions-card-top-priorities');
+  if (aCardTop) aCardTop.style.display = 'none';
+  const aToggleAll = document.getElementById('qla-toggle-all-actions-container');
+  if (aToggleAll) aToggleAll.style.display = 'none';
+  const aAllContainer = document.getElementById('qla-all-actions-container');
+  if (aAllContainer) aAllContainer.style.display = 'none';
+  const aListDept = document.getElementById('qla-actions-list-dept');
+  if (aListDept) aListDept.innerHTML = '';
+  const aListClass = document.getElementById('qla-actions-list-class');
+  if (aListClass) aListClass.innerHTML = '';
+  const aListStudents = document.getElementById('qla-actions-list-students');
+  if (aListStudents) aListStudents.innerHTML = '';
+  const aCountBadge = document.getElementById('qla-actions-count-badge');
+  if (aCountBadge) aCountBadge.textContent = '0 actions';
+  const aEmptyState = document.getElementById('qla-actions-empty-state');
+  if (aEmptyState) aEmptyState.style.display = 'none';
+
+  // Re-render diagnostics to remove QLA block
+  if (currentDiagnostics) {
+    renderDiagnostics(currentDiagnostics, currentFileName, currentSnapshotName);
+  }
+
+  if (options.notify) {
+    showToast('QLA data removed.');
+  }
+}
+
+/**
+ * Process QLA spreadsheet file
+ */
+async function processQlaFile(file) {
+  if (!allRecords || allRecords.length === 0) {
+    showToast('Upload the snapshot first.');
+    return;
+  }
+
+  const errorEl = document.getElementById('qla-upload-error');
+  if (errorEl) errorEl.style.display = 'none';
+
+  try {
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+
+    if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+      throw new Error('Workbook contains no sheets.');
+    }
+
+    const rawSheets = workbook.SheetNames.map(sheetName => {
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      return {
+        name: sheetName,
+        rows
+      };
+    });
+
+    const qlaResult = processQlaWorkbookData(
+      rawSheets,
+      file.name,
+      allRecords,
+      activeGrouping
+    );
+
+    currentQlaData = {
+      rawSheets,
+      fileName: file.name,
+      assessmentTitle: qlaResult.assessmentTitle,
+      papers: qlaResult.papers,
+      diagnostics: qlaResult.diagnostics
+    };
+    currentQlaFile = file;
+
+    // Default selected paper for Questions tab
+    if (qlaResult.papers.length > 0) {
+      qlaQuestionsState.selectedPaper = qlaResult.papers[0].sheetName;
+    }
+
+    // Update QLA Card UI to loaded state
+    updateQlaCardLoaded(qlaResult);
+
+    // Show QLA insights section
+    const insightsSection = document.getElementById('section-qla-insights');
+    if (insightsSection) {
+      insightsSection.style.display = 'block';
+    }
+
+    // Render Papers and skills, Questions, Classes, and Students tabs
+    renderQlaPapersAndSkillsTab();
+    renderQlaQuestionsTab();
+    renderQlaClassesTab();
+    renderQlaStudentsTab();
+    renderQlaActionsTab();
+
+    // Re-render diagnostics panel to include QLA block
+    if (currentDiagnostics) {
+      renderDiagnostics(currentDiagnostics, currentFileName, currentSnapshotName);
+    }
+
+    showToast(`Loaded QLA: ${qlaResult.assessmentTitle} (${qlaResult.papers.length} ${qlaResult.papers.length === 1 ? 'paper' : 'papers'})`);
+  } catch (err) {
+    console.error('QLA processing error:', err);
+    if (errorEl) {
+      errorEl.textContent = `Error reading QLA: ${err.message}`;
+      errorEl.style.display = 'block';
+    }
+  }
+}
+
+/**
+ * Download QLA Template (.xlsx)
+ * Builds an offline .xlsx workbook with invented example data.
+ * Pure download only - never loads data into the dashboard.
+ */
+function downloadQlaTemplate() {
+  try {
+    const wb = generateQlaTemplateWorkbook();
+    XLSX.writeFile(wb, 'Y10_Spanish_Assessment_QLA_Example.xlsx');
+    showToast('Downloaded QLA example template.');
+  } catch (err) {
+    console.error('Failed to generate QLA template:', err);
+    showToast('Failed to download template.');
+  }
+}
+
+/**
+ * Initialize QLA UI handlers and tab switching
+ */
+function initQlaHandlers() {
+  const browseBtn = document.getElementById('btn-browse-qla');
+  const downloadBtn = document.getElementById('btn-download-qla-template');
+  const fileInput = document.getElementById('qla-file-input');
+  const dropzone = document.getElementById('panel-qla');
+  const removeBtn = document.getElementById('btn-remove-qla');
+
+  if (browseBtn && fileInput) {
+    browseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!allRecords || allRecords.length === 0) return;
+      fileInput.click();
+    });
+  }
+
+  if (downloadBtn) {
+    downloadBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      downloadQlaTemplate();
+    });
+  }
+
+  if (dropzone && fileInput) {
+    dropzone.addEventListener('click', (e) => {
+      if (e.target.closest('#btn-remove-qla')) return;
+      if (e.target.closest('#btn-download-qla-template')) return;
+      if (e.target.closest('#qla-format-guide')) return;
+      if (!allRecords || allRecords.length === 0) return;
+      if (currentQlaData) return;
+      fileInput.click();
+    });
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (file) processQlaFile(file);
+    });
+  }
+
+  if (dropzone) {
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (!allRecords || allRecords.length === 0) return;
+      dropzone.classList.add('drag-over');
+    });
+
+    dropzone.addEventListener('dragleave', () => {
+      dropzone.classList.remove('drag-over');
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('drag-over');
+      if (!allRecords || allRecords.length === 0) return;
+      const file = e.dataTransfer?.files?.[0];
+      if (file) processQlaFile(file);
+    });
+  }
+
+  if (removeBtn) {
+    removeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      clearQlaData({ notify: true });
+    });
+  }
+
+  // Filter controls for Papers and skills tab
+  const filterClass = document.getElementById('qla-filter-class');
+  const filterTier = document.getElementById('qla-filter-tier');
+  const filterSen = document.getElementById('qla-filter-sen');
+  const filterDis = document.getElementById('qla-filter-disadvantaged');
+  const btnReset = document.getElementById('btn-qla-reset-filters');
+
+  const onQlaFilterChange = () => {
+    qlaTabFilters = {
+      className: filterClass ? filterClass.value : 'ALL',
+      tier: filterTier ? filterTier.value : 'ALL',
+      sen: filterSen ? filterSen.value : 'ALL',
+      disadvantaged: filterDis ? filterDis.value : 'ALL'
+    };
+    renderQlaPapersAndSkillsTab();
+  };
+
+  if (filterClass) filterClass.addEventListener('change', onQlaFilterChange);
+  if (filterTier) filterTier.addEventListener('change', onQlaFilterChange);
+  if (filterSen) filterSen.addEventListener('change', onQlaFilterChange);
+  if (filterDis) filterDis.addEventListener('change', onQlaFilterChange);
+
+  if (btnReset) {
+    btnReset.addEventListener('click', () => {
+      qlaTabFilters = {
+        className: 'ALL',
+        tier: 'ALL',
+        sen: 'ALL',
+        disadvantaged: 'ALL'
+      };
+      if (filterClass) filterClass.value = 'ALL';
+      if (filterTier) filterTier.value = 'ALL';
+      if (filterSen) filterSen.value = 'ALL';
+      if (filterDis) filterDis.value = 'ALL';
+      renderQlaPapersAndSkillsTab();
+    });
+  }
+
+  // Filter controls for Questions tab
+  const qPaperSelect = document.getElementById('qla-questions-paper-select');
+  const qFilterClass = document.getElementById('qla-q-filter-class');
+  const qFilterSen = document.getElementById('qla-q-filter-sen');
+  const qFilterDis = document.getElementById('qla-q-filter-disadvantaged');
+  const btnQReset = document.getElementById('btn-qla-q-reset-filters');
+
+  if (qPaperSelect) {
+    qPaperSelect.addEventListener('change', () => {
+      qlaQuestionsState.selectedPaper = qPaperSelect.value;
+      renderQlaQuestionsTab();
+    });
+  }
+
+  const onQuestionsFilterChange = () => {
+    qlaQuestionsState.filters = {
+      className: qFilterClass ? qFilterClass.value : 'ALL',
+      sen: qFilterSen ? qFilterSen.value : 'ALL',
+      disadvantaged: qFilterDis ? qFilterDis.value : 'ALL'
+    };
+    renderQlaQuestionsTab();
+  };
+
+  if (qFilterClass) qFilterClass.addEventListener('change', onQuestionsFilterChange);
+  if (qFilterSen) qFilterSen.addEventListener('change', onQuestionsFilterChange);
+  if (qFilterDis) qFilterDis.addEventListener('change', onQuestionsFilterChange);
+
+  if (btnQReset) {
+    btnQReset.addEventListener('click', () => {
+      qlaQuestionsState.filters = {
+        className: 'ALL',
+        sen: 'ALL',
+        disadvantaged: 'ALL'
+      };
+      if (qFilterClass) qFilterClass.value = 'ALL';
+      if (qFilterSen) qFilterSen.value = 'ALL';
+      if (qFilterDis) qFilterDis.value = 'ALL';
+      renderQlaQuestionsTab();
+    });
+  }
+
+  // Class selector for Classes tab
+  const cClassSelect = document.getElementById('qla-classes-class-select');
+  if (cClassSelect) {
+    cClassSelect.addEventListener('change', () => {
+      qlaClassesState.selectedClass = cClassSelect.value;
+      renderQlaClassesTab();
+    });
+  }
+
+  // Filter controls for Students tab
+  const stFilterClass = document.getElementById('qla-students-filter-class');
+  const stFilterSen = document.getElementById('qla-students-filter-sen');
+  const stFilterDis = document.getElementById('qla-students-filter-disadvantaged');
+  const stFilterWeakest = document.getElementById('qla-students-filter-weakest');
+  const btnStReset = document.getElementById('btn-qla-students-reset-filters');
+
+  const onStudentsFilterChange = () => {
+    qlaStudentsState.filters = {
+      className: stFilterClass ? stFilterClass.value : 'ALL',
+      sen: stFilterSen ? stFilterSen.value : 'ALL',
+      disadvantaged: stFilterDis ? stFilterDis.value : 'ALL',
+      weakestPaper: stFilterWeakest ? stFilterWeakest.value : 'ALL'
+    };
+    renderQlaStudentsTab();
+  };
+
+  if (stFilterClass) stFilterClass.addEventListener('change', onStudentsFilterChange);
+  if (stFilterSen) stFilterSen.addEventListener('change', onStudentsFilterChange);
+  if (stFilterDis) stFilterDis.addEventListener('change', onStudentsFilterChange);
+  if (stFilterWeakest) stFilterWeakest.addEventListener('change', onStudentsFilterChange);
+
+  if (btnStReset) {
+    btnStReset.addEventListener('click', () => {
+      qlaStudentsState.filters = {
+        className: 'ALL',
+        sen: 'ALL',
+        disadvantaged: 'ALL',
+        weakestPaper: 'ALL'
+      };
+      if (stFilterClass) stFilterClass.value = 'ALL';
+      if (stFilterSen) stFilterSen.value = 'ALL';
+      if (stFilterDis) stFilterDis.value = 'ALL';
+      if (stFilterWeakest) stFilterWeakest.value = 'ALL';
+      renderQlaStudentsTab();
+    });
+  }
+
+  // Tabs switching for #section-qla-insights
+  const tabBtns = document.querySelectorAll('.qla-tab-btn');
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabBtns.forEach(b => {
+        b.classList.remove('active');
+        b.setAttribute('aria-selected', 'false');
+      });
+      btn.classList.add('active');
+      btn.setAttribute('aria-selected', 'true');
+
+      const targetTab = btn.getAttribute('data-tab');
+      const panes = document.querySelectorAll('.qla-tab-pane');
+      panes.forEach(pane => {
+        pane.style.display = 'none';
+        pane.classList.remove('active');
+      });
+
+      const activePane = document.getElementById(`pane-${targetTab}`);
+      if (activePane) {
+        activePane.style.display = 'block';
+        activePane.classList.add('active');
+      }
+
+      if (targetTab === 'papers-skills') {
+        renderQlaPapersAndSkillsTab();
+      }
+      if (targetTab === 'questions') {
+        renderQlaQuestionsTab();
+      }
+      if (targetTab === 'classes') {
+        renderQlaClassesTab();
+      }
+      if (targetTab === 'students') {
+        renderQlaStudentsTab();
+      }
+      if (targetTab === 'actions') {
+        renderQlaActionsTab();
+      }
+    });
+  });
+}
+
+/**
+ * Render QLA "Papers and skills" tab
+ */
+function renderQlaPapersAndSkillsTab() {
+  if (!currentQlaData || !currentQlaData.papers || currentQlaData.papers.length === 0) return;
+
+  const papers = currentQlaData.papers;
+
+  // 1. Populate Class filter dropdown with active classes
+  const classSet = new Set();
+  for (const p of papers) {
+    for (const s of p.students || []) {
+      const cls = s.activeClass || s.className || s.currentClass;
+      if (cls && cls !== 'Unassigned') classSet.add(cls);
+    }
+  }
+  const classes = Array.from(classSet).sort();
+  const filterClass = document.getElementById('qla-filter-class');
+  if (filterClass) {
+    const currentVal = qlaTabFilters.className || 'ALL';
+    filterClass.innerHTML = `<option value="ALL">All classes</option>` +
+      classes.map(c => `<option value="${c}" ${c === currentVal ? 'selected' : ''}>${c}</option>`).join('');
+  }
+
+  // 2. Count distinct students matching filters across papers
+  const matchingStudentKeys = new Set();
+  for (const p of papers) {
+    if (qlaTabFilters.tier && qlaTabFilters.tier !== 'ALL' && p.tier !== qlaTabFilters.tier) continue;
+    const filtered = filterQlaStudents(p.students || [], qlaTabFilters);
+    for (const s of filtered) {
+      if (s.status !== 'absent') {
+        matchingStudentKeys.add(s.nameKey || s.name);
+      }
+    }
+  }
+  const badge = document.getElementById('qla-filter-count-badge');
+  if (badge) {
+    badge.textContent = `Showing ${matchingStudentKeys.size} ${matchingStudentKeys.size === 1 ? 'student' : 'students'}`;
+  }
+
+  // 3. Render Tier Highlights: Strongest & Weakest Paper Overall (Foundation & Higher separated)
+  const tierHighlightsEl = document.getElementById('qla-tier-highlights');
+  if (tierHighlightsEl) {
+    const highlights = calculateCohortTierHighlights(papers, qlaTabFilters);
+    let html = '';
+
+    // Foundation card (show if tier filter allows Foundation)
+    if (qlaTabFilters.tier === 'ALL' || qlaTabFilters.tier === 'Foundation') {
+      if (highlights.foundation.strongest) {
+        const s = highlights.foundation.strongest;
+        const w = highlights.foundation.weakest;
+        html += `
+          <div class="qla-tier-card foundation">
+            <div class="qla-tier-card-header">
+              <span class="qla-tier-card-title">Foundation Tier Overview</span>
+              <span class="qla-tier-badge foundation">Foundation</span>
+            </div>
+            <div class="qla-tier-card-body">
+              <div class="qla-highlight-row">
+                <span class="qla-highlight-label">
+                  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: var(--brand-green);"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                  Strongest Paper
+                </span>
+                <span class="qla-highlight-value">${s.paper} F (${s.avgPct.toFixed(1)}%)</span>
+              </div>
+              <div class="qla-highlight-row">
+                <span class="qla-highlight-label">
+                  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: #dc2626;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                  Weakest Paper
+                </span>
+                <span class="qla-highlight-value">${w.paper} F (${w.avgPct.toFixed(1)}%)</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    // Higher card (show if tier filter allows Higher)
+    if (qlaTabFilters.tier === 'ALL' || qlaTabFilters.tier === 'Higher') {
+      if (highlights.higher.strongest) {
+        const s = highlights.higher.strongest;
+        const w = highlights.higher.weakest;
+        html += `
+          <div class="qla-tier-card higher">
+            <div class="qla-tier-card-header">
+              <span class="qla-tier-card-title">Higher Tier Overview</span>
+              <span class="qla-tier-badge higher">Higher</span>
+            </div>
+            <div class="qla-tier-card-body">
+              <div class="qla-highlight-row">
+                <span class="qla-highlight-label">
+                  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: var(--brand-green);"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                  Strongest Paper
+                </span>
+                <span class="qla-highlight-value">${s.paper} H (${s.avgPct.toFixed(1)}%)</span>
+              </div>
+              <div class="qla-highlight-row">
+                <span class="qla-highlight-label">
+                  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: #dc2626;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                  Weakest Paper
+                </span>
+                <span class="qla-highlight-value">${w.paper} H (${w.avgPct.toFixed(1)}%)</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    tierHighlightsEl.innerHTML = html;
+  }
+
+  // 4. Render Paper Cards Grid
+  const paperCardsGrid = document.getElementById('qla-paper-cards-grid');
+  if (paperCardsGrid) {
+    let cardsHtml = '';
+    for (const paper of papers) {
+      const stats = calculatePaperStats(paper, qlaTabFilters);
+      if (!stats) continue; // skipped by tier filter
+
+      const tierClass = stats.tier.toLowerCase() === 'foundation' ? 'foundation' : stats.tier.toLowerCase() === 'higher' ? 'higher' : '';
+
+      let bodyHtml = '';
+      if (stats.n === 0) {
+        bodyHtml = `
+          <div class="qla-range-row" style="justify-content: center; padding: 20px 0; color: var(--text-muted);">
+            No students matching current filters
+          </div>
+        `;
+      } else {
+        const sectionsHtml = stats.sections && stats.sections.length > 0 ? `
+          <div class="qla-sections-block">
+            <div class="qla-sections-heading">Section Breakdown</div>
+            <div class="qla-sections-list">
+              ${stats.sections.map(sec => `
+                <div class="qla-section-item">
+                  <span class="qla-section-name">${sec.section} (max ${sec.maxMarks})</span>
+                  <span class="qla-section-stat">${sec.avgPct.toFixed(1)}%</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : '';
+
+        bodyHtml = `
+          <div class="qla-metrics-hero">
+            <div class="qla-metric-avg-group">
+              <span class="qla-metric-avg-val">${stats.avgPct.toFixed(1)}%</span>
+              <span class="qla-metric-avg-label">Average</span>
+            </div>
+            <span class="qla-metric-n-badge">${stats.n} present</span>
+          </div>
+
+          <div class="qla-metrics-subgrid">
+            <div class="qla-submetric">
+              <span class="qla-submetric-val">${stats.medianPct !== null ? stats.medianPct.toFixed(1) + '%' : '-'}</span>
+              <span class="qla-submetric-label">Median</span>
+            </div>
+            <div class="qla-submetric">
+              <span class="qla-submetric-val">${stats.pctAtOrAbove50 !== null ? stats.pctAtOrAbove50.toFixed(1) + '%' : '-'}</span>
+              <span class="qla-submetric-label">At or above 50%</span>
+            </div>
+          </div>
+
+          <div class="qla-range-row">
+            <span><strong>Highest:</strong> ${stats.highestScore.marks} / ${stats.totalMax} (${stats.highestScore.pct.toFixed(1)}%)</span>
+            <span><strong>Lowest:</strong> ${stats.lowestScore.marks} / ${stats.totalMax} (${stats.lowestScore.pct.toFixed(1)}%)</span>
+          </div>
+
+          ${sectionsHtml}
+        `;
+      }
+
+      cardsHtml += `
+        <div class="qla-paper-card">
+          <div class="qla-paper-card-header">
+            <span class="qla-paper-card-title">${stats.paper}</span>
+            <span class="qla-tier-badge ${tierClass}">${stats.tier}</span>
+          </div>
+          ${bodyHtml}
+        </div>
+      `;
+    }
+    paperCardsGrid.innerHTML = cardsHtml;
+  }
+
+  // 5. Render Class by Paper Comparison Table
+  const tableEl = document.getElementById('qla-class-paper-table');
+  if (tableEl) {
+    const matrix = calculateClassPaperMatrix(papers, qlaTabFilters);
+
+    if (matrix.papers.length === 0 || matrix.classes.length === 0) {
+      tableEl.innerHTML = `<tbody><tr><td colspan="10" style="text-align: center; padding: 20px; color: var(--text-muted);">No class data matching current filters</td></tr></tbody>`;
+    } else {
+      const headerCols = matrix.papers.map(p => {
+        const tierLetter = p.tier === 'Foundation' ? 'F' : p.tier === 'Higher' ? 'H' : p.tier;
+        const tierClass = p.tier.toLowerCase() === 'foundation' ? 'foundation' : p.tier.toLowerCase() === 'higher' ? 'higher' : '';
+        return `<th>${p.paper} <span class="qla-tier-badge ${tierClass}">${tierLetter}</span></th>`;
+      }).join('');
+
+      const cohortCells = matrix.papers.map(p => {
+        const avg = p.cohortAvg !== null ? p.cohortAvg.toFixed(1) + '%' : '-';
+        return `<td><strong>${avg}</strong></td>`;
+      }).join('');
+
+      const classRows = matrix.rows.map(row => {
+        const cells = matrix.papers.map(p => {
+          const cell = row.cells[p.sheetName];
+          if (!cell || cell.avgPct === null) {
+            return `<td style="color: var(--text-muted);">-</td>`;
+          }
+          if (cell.tooFew) {
+            return `<td class="qla-cell-too-few" title="${cell.tooltip}">${cell.avgPct.toFixed(1)}%<span class="qla-cell-n">(n=${cell.n})</span></td>`;
+          }
+          return `<td class="qla-cell-${cell.band}">${cell.avgPct.toFixed(1)}%<span class="qla-cell-n">(n=${cell.n})</span></td>`;
+        }).join('');
+
+        return `<tr><td><strong>${row.className}</strong></td>${cells}</tr>`;
+      }).join('');
+
+      tableEl.innerHTML = `
+        <thead>
+          <tr>
+            <th>Class</th>
+            ${headerCols}
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="background: var(--bg-body); border-bottom: 2px solid var(--border-color);">
+            <td><strong>Cohort Average</strong></td>
+            ${cohortCells}
+          </tr>
+          ${classRows}
+        </tbody>
+      `;
+    }
+  }
+
+  // 6. Render Class Strongest / Weakest Highlights List
+  const highlightsListEl = document.getElementById('qla-class-highlights-list');
+  if (highlightsListEl) {
+    const classHighlights = calculateClassPaperHighlights(papers, qlaTabFilters);
+    if (classHighlights.length === 0) {
+      highlightsListEl.innerHTML = `<div class="qla-class-highlight-item too-few">No classes found matching filters.</div>`;
+    } else {
+      highlightsListEl.innerHTML = classHighlights.map(item => `
+        <div class="qla-class-highlight-item ${item.hasEnoughData ? '' : 'too-few'}">
+          ${item.summaryText}
+        </div>
+      `).join('');
+    }
+  }
+}
+
+/**
+ * Render QLA "Questions" tab
+ */
+function renderQlaQuestionsTab() {
+  if (!currentQlaData || !currentQlaData.papers || currentQlaData.papers.length === 0) return;
+
+  const papers = currentQlaData.papers;
+
+  // 1. Ensure selectedPaper is valid
+  if (!qlaQuestionsState.selectedPaper || !papers.some(p => p.sheetName === qlaQuestionsState.selectedPaper)) {
+    qlaQuestionsState.selectedPaper = papers[0].sheetName;
+  }
+
+  const paper = papers.find(p => p.sheetName === qlaQuestionsState.selectedPaper) || papers[0];
+
+  // 2. Populate Paper & Tier selector
+  const paperSelect = document.getElementById('qla-questions-paper-select');
+  if (paperSelect) {
+    paperSelect.innerHTML = papers.map(p => {
+      const tierLabel = p.tier ? ` (${p.tier})` : '';
+      const isSelected = p.sheetName === paper.sheetName;
+      return `<option value="${escapeHtml(p.sheetName)}" ${isSelected ? 'selected' : ''}>${escapeHtml(p.sheetName)}${tierLabel}</option>`;
+    }).join('');
+  }
+
+  // 3. Populate Class dropdown with active classes from this paper
+  const classSet = new Set();
+  for (const s of paper.students || []) {
+    const cls = s.activeClass || s.className || s.currentClass;
+    if (cls && cls !== 'Unassigned') classSet.add(cls);
+  }
+  const classes = Array.from(classSet).sort();
+  const filterClass = document.getElementById('qla-q-filter-class');
+  if (filterClass) {
+    const currentVal = qlaQuestionsState.filters.className || 'ALL';
+    filterClass.innerHTML = `<option value="ALL">All classes</option>` +
+      classes.map(c => `<option value="${escapeHtml(c)}" ${c === currentVal ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
+  }
+
+  // 4. Update count badge for students matching filters (non-absent)
+  const filteredStudents = filterQlaStudents(paper.students || [], qlaQuestionsState.filters);
+  const presentStudents = filteredStudents.filter(s => s.status !== 'absent');
+  const countBadge = document.getElementById('qla-q-filter-count-badge');
+  if (countBadge) {
+    countBadge.textContent = `Showing ${presentStudents.length} ${presentStudents.length === 1 ? 'student' : 'students'}`;
+  }
+
+  // 5. Calculate question stats with custom thresholds
+  const qStats = calculateQuestionStats(paper, qlaQuestionsState.filters, qlaQuestionsState.thresholds);
+
+  // 6. Quality Flags Alerts Banner
+  const qualityFlagsEl = document.getElementById('qla-questions-quality-flags');
+  if (qualityFlagsEl) {
+    const flaggedQuestions = qStats.questions.filter(q => q.qualityFlags && q.qualityFlags.length > 0);
+    if (flaggedQuestions.length === 0) {
+      qualityFlagsEl.innerHTML = `
+        <div class="qla-flag-card good">
+          <div class="qla-flag-title">
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: var(--brand-green);"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            Question Quality: No Issues Detected
+          </div>
+          <div class="qla-flag-desc">All questions demonstrate healthy discrimination (≥ 10) and normal zero rates (&lt; 30%).</div>
+        </div>
+      `;
+    } else {
+      qualityFlagsEl.innerHTML = `
+        <div class="qla-flag-card warn">
+          <div class="qla-flag-title">
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: #ea580c;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            Quality Alerts (${flaggedQuestions.length} ${flaggedQuestions.length === 1 ? 'question' : 'questions'})
+          </div>
+          <div class="qla-flag-items">
+            ${flaggedQuestions.map(q => `
+              <div class="qla-flag-item">
+                <strong>${escapeHtml(q.label)}:</strong> ${q.qualityFlags.map(escapeHtml).join(' · ')}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  // 7. Dictation & Translation Skills Card
+  const dictationCardEl = document.getElementById('qla-dictation-translation-card');
+  if (dictationCardEl) {
+    const specialInfo = getDictationAndTranslationQuestions(paper, qlaQuestionsState.filters, qlaQuestionsState.thresholds);
+    if (!specialInfo.hasSpecialQuestions) {
+      dictationCardEl.innerHTML = `
+        <div class="qla-skills-card">
+          <div class="qla-skills-card-title">
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+            Dictation &amp; Translation Skills
+          </div>
+          <div class="qla-skills-empty">No dictation or translation questions in this paper.</div>
+        </div>
+      `;
+    } else {
+      dictationCardEl.innerHTML = `
+        <div class="qla-skills-card">
+          <div class="qla-skills-card-title">
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: var(--brand-green);"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+            Dictation &amp; Translation Skills
+          </div>
+          <div class="qla-skills-list">
+            ${specialInfo.questions.map(q => `
+              <div class="qla-skill-row">
+                <div class="qla-skill-name">
+                  <strong>${escapeHtml(q.label)}</strong>
+                  <span class="qla-skill-sub">${escapeHtml(q.topic || 'General')} · Max ${q.maxMarks}</span>
+                </div>
+                <div class="qla-skill-metrics">
+                  <span class="qla-fac-badge ${q.facilityBand}">${q.facility !== null ? q.facility.toFixed(1) + '%' : '-'}</span>
+                  <span class="qla-skill-metric-pill" title="Zero rate">0%: ${q.zeroRate !== null ? q.zeroRate.toFixed(1) + '%' : '-'}</span>
+                  <span class="qla-skill-metric-pill" title="Discrimination">Disc: ${q.discrimination !== null ? q.discrimination.toFixed(1) : 'n/a'}</span>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  // 8. Best 3 & Worst 3 Questions
+  const bestWorstEl = document.getElementById('qla-best-worst-container');
+  if (bestWorstEl) {
+    const bwData = calculateBestAndWorstQuestions(paper, qlaQuestionsState.filters, 3);
+    bestWorstEl.innerHTML = `
+      <div class="table-header-bar">
+        <div class="table-header-title">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color: var(--brand-green);"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+          Best &amp; Worst Questions by Facility
+        </div>
+      </div>
+      <div style="padding: 16px;">
+        <div class="qla-best-worst-grid">
+          <div class="qla-best-col">
+            <div class="qla-bw-header best">
+              <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none"><polyline points="18 15 12 9 6 15"></polyline></svg>
+              Cohort Best 3 Questions
+            </div>
+            <div class="qla-bw-list">
+              ${bwData.cohortBest.length > 0 ? bwData.cohortBest.map((q, i) => `
+                <div class="qla-bw-item">
+                  <span class="qla-bw-rank">#${i + 1}</span>
+                  <div class="qla-bw-info">
+                    <strong>${escapeHtml(q.label)}</strong>
+                    <span class="qla-bw-topic">${escapeHtml(q.topic)} (${escapeHtml(q.section || 'Sec')})</span>
+                  </div>
+                  <span class="qla-fac-badge strong">${q.facility.toFixed(1)}%</span>
+                </div>
+              `).join('') : '<div class="qla-empty-text">No data</div>'}
+            </div>
+          </div>
+
+          <div class="qla-worst-col">
+            <div class="qla-bw-header worst">
+              <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              Cohort Worst 3 Questions
+            </div>
+            <div class="qla-bw-list">
+              ${bwData.cohortWorst.length > 0 ? bwData.cohortWorst.map((q, i) => `
+                <div class="qla-bw-item">
+                  <span class="qla-bw-rank">#${i + 1}</span>
+                  <div class="qla-bw-info">
+                    <strong>${escapeHtml(q.label)}</strong>
+                    <span class="qla-bw-topic">${escapeHtml(q.topic)} (${escapeHtml(q.section || 'Sec')})</span>
+                  </div>
+                  <span class="qla-fac-badge weak">${q.facility.toFixed(1)}%</span>
+                </div>
+              `).join('') : '<div class="qla-empty-text">No data</div>'}
+            </div>
+          </div>
+        </div>
+
+        ${bwData.classBreakdowns && bwData.classBreakdowns.length > 0 ? `
+          <div class="qla-class-bw-section" style="margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+            <div style="font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 12px;">Class Level Best &amp; Worst (Classes with ≥ 5 students)</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px;">
+              ${bwData.classBreakdowns.map(c => `
+                <div class="qla-class-bw-card">
+                  <div class="qla-class-bw-name">${escapeHtml(c.className)} <span style="font-weight: normal; font-size: 12px; color: var(--text-muted);">(n=${c.n})</span></div>
+                  <div class="qla-class-bw-row"><span class="qla-bw-mini-tag best">Best:</span> ${c.best.map(q => `${escapeHtml(q.label)} (${q.facility.toFixed(0)}%)`).join(', ') || '-'}</div>
+                  <div class="qla-class-bw-row"><span class="qla-bw-mini-tag worst">Worst:</span> ${c.worst.map(q => `${escapeHtml(q.label)} (${q.facility.toFixed(0)}%)`).join(', ') || '-'}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  // 9. Sortable Question Table
+  const questionTableEl = document.getElementById('qla-question-table');
+  if (questionTableEl) {
+    const rawQuestions = [...qStats.questions];
+    const key = qlaQuestionsState.sortKey || 'key';
+    const dir = qlaQuestionsState.sortDir === 'desc' ? -1 : 1;
+
+    rawQuestions.sort((a, b) => {
+      let valA = a[key];
+      let valB = b[key];
+
+      if (key === 'key') {
+        const idxA = paper.questions.findIndex(q => q.key === a.key);
+        const idxB = paper.questions.findIndex(q => q.key === b.key);
+        return (idxA - idxB) * dir;
+      }
+
+      if (valA === null || valA === undefined) return 1;
+      if (valB === null || valB === undefined) return -1;
+
+      if (typeof valA === 'string') {
+        return valA.localeCompare(valB) * dir;
+      }
+      return (valA - valB) * dir;
+    });
+
+    const getSortIndicator = (colKey) => {
+      if (qlaQuestionsState.sortKey !== colKey) {
+        return `<span class="sort-indicator inactive">↕</span>`;
+      }
+      return `<span class="sort-indicator active">${qlaQuestionsState.sortDir === 'desc' ? '▼' : '▲'}</span>`;
+    };
+
+    questionTableEl.innerHTML = `
+      <thead>
+        <tr>
+          <th data-q-sort="key" class="sortable">Label ${getSortIndicator('key')}</th>
+          <th data-q-sort="section" class="sortable">Section ${getSortIndicator('section')}</th>
+          <th data-q-sort="topic" class="sortable">Topic ${getSortIndicator('topic')}</th>
+          <th data-q-sort="ao" class="sortable">AO ${getSortIndicator('ao')}</th>
+          <th data-q-sort="maxMarks" class="sortable" style="text-align: right;">Max ${getSortIndicator('maxMarks')}</th>
+          <th data-q-sort="facility" class="sortable" style="text-align: right;">Facility % ${getSortIndicator('facility')}</th>
+          <th data-q-sort="zeroRate" class="sortable" style="text-align: right;">Zero Rate % ${getSortIndicator('zeroRate')}</th>
+          <th data-q-sort="discrimination" class="sortable" style="text-align: right;">Discrimination ${getSortIndicator('discrimination')}</th>
+          <th>Quality Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rawQuestions.map(q => `
+          <tr>
+            <td><strong>${escapeHtml(q.label)}</strong></td>
+            <td>${escapeHtml(q.section || '-')}</td>
+            <td>${escapeHtml(q.topic || '-')}</td>
+            <td>${escapeHtml(q.ao || '-')}</td>
+            <td style="text-align: right;">${q.maxMarks}</td>
+            <td style="text-align: right;">
+              <span class="qla-fac-badge ${q.facilityBand}">
+                ${q.facility !== null ? q.facility.toFixed(1) + '%' : '-'}
+              </span>
+            </td>
+            <td style="text-align: right;">${q.zeroRate !== null ? q.zeroRate.toFixed(1) + '%' : '-'}</td>
+            <td style="text-align: right;">${q.discrimination !== null ? (q.discrimination > 0 ? '+' : '') + q.discrimination.toFixed(1) : 'n/a'}</td>
+            <td>
+              ${q.qualityFlags && q.qualityFlags.length > 0 ?
+                `<span class="qla-table-flag-pill" title="${escapeHtml(q.qualityFlags.join(' · '))}">⚠️ ${escapeHtml(q.qualityFlags[0])}</span>` :
+                `<span style="color: var(--text-muted); font-size: 12px;">✓ Ok</span>`
+              }
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    `;
+
+    // Attach click events on header elements for sorting
+    const ths = questionTableEl.querySelectorAll('th[data-q-sort]');
+    ths.forEach(th => {
+      th.style.cursor = 'pointer';
+      th.addEventListener('click', () => {
+        const sortField = th.getAttribute('data-q-sort');
+        if (qlaQuestionsState.sortKey === sortField) {
+          qlaQuestionsState.sortDir = qlaQuestionsState.sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          qlaQuestionsState.sortKey = sortField;
+          // For metric columns, default to desc; for labels default to asc
+          if (['facility', 'zeroRate', 'discrimination', 'maxMarks'].includes(sortField)) {
+            qlaQuestionsState.sortDir = 'desc';
+          } else {
+            qlaQuestionsState.sortDir = 'asc';
+          }
+        }
+        renderQlaQuestionsTab();
+      });
+    });
+  }
+
+  // 10. Class Facility Heatmap
+  const heatmapTableEl = document.getElementById('qla-question-heatmap-table');
+  if (heatmapTableEl) {
+    const heatmap = calculateQuestionHeatmap(paper, qlaQuestionsState.filters);
+    const classHeaders = heatmap.classes.map(c => `
+      <th style="text-align: right; min-width: 80px;">
+        ${escapeHtml(c.className)}
+        <div style="font-size: 11px; font-weight: normal; color: var(--text-muted);">(n=${c.n})</div>
+      </th>
+    `).join('');
+
+    const rowsHtml = heatmap.rows.map(r => {
+      const classCells = heatmap.classes.map(c => {
+        const cell = r.cells[c.className];
+        if (!cell || cell.tooFew) {
+          return `<td class="qla-heatmap-cell qla-heatmap-too-few" style="text-align: right;" title="Fewer than 5 students in this class">-</td>`;
+        }
+        if (cell.flagged) {
+          return `
+            <td class="qla-heatmap-cell qla-heatmap-flagged" style="text-align: right;" title="${cell.diff} pts below cohort (${cell.cohortFacility?.toFixed(1)}%)">
+              <strong>${cell.facility.toFixed(1)}%</strong>
+              <div style="font-size: 10.5px; opacity: 0.85;">(-${cell.diff})</div>
+            </td>
+          `;
+        }
+        return `
+          <td class="qla-heatmap-cell" style="text-align: right;">
+            ${cell.facility !== null ? cell.facility.toFixed(1) + '%' : '-'}
+          </td>
+        `;
+      }).join('');
+
+      return `
+        <tr>
+          <td>
+            <strong>${escapeHtml(r.label)}</strong>
+            <span style="font-size: 11.5px; color: var(--text-muted); margin-left: 4px;">(${escapeHtml(r.topic || 'General')})</span>
+          </td>
+          <td style="text-align: right; background: var(--bg-body); border-right: 2px solid var(--border-color);">
+            <strong>${r.cohortFacility !== null ? r.cohortFacility.toFixed(1) + '%' : '-'}</strong>
+          </td>
+          ${classCells}
+        </tr>
+      `;
+    }).join('');
+
+    heatmapTableEl.innerHTML = `
+      <thead>
+        <tr>
+          <th style="min-width: 140px;">Question</th>
+          <th style="text-align: right; min-width: 90px; border-right: 2px solid var(--border-color);">Cohort Average</th>
+          ${classHeaders}
+        </tr>
+      </thead>
+      <tbody>
+        ${rowsHtml}
+      </tbody>
+    `;
+  }
+
+  // 11. Topic and AO Summaries
+  const summariesEl = document.getElementById('qla-topic-ao-container');
+  if (summariesEl) {
+    const summaries = calculateTopicAndAOSummaries(paper, qlaQuestionsState.filters);
+    const strongThresh = qlaQuestionsState.thresholds.strong;
+    const weakThresh = qlaQuestionsState.thresholds.weak;
+
+    const topicCardHtml = `
+      <div class="qla-summary-card">
+        <div class="qla-summary-card-header">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" style="color: var(--brand-green);"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+          Topic Facility Summary
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Topic</th>
+                <th style="text-align: right;">Questions</th>
+                <th style="text-align: right;">Total Marks</th>
+                <th style="text-align: right;">Average Facility %</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${summaries.topics.map(t => {
+                let band = 'secure';
+                if (t.avgFacility >= strongThresh) band = 'strong';
+                else if (t.avgFacility < weakThresh) band = 'weak';
+                return `
+                  <tr>
+                    <td><strong>${escapeHtml(t.topic)}</strong></td>
+                    <td style="text-align: right;">${t.questionCount}</td>
+                    <td style="text-align: right;">${t.maxMarks}</td>
+                    <td style="text-align: right;"><span class="qla-fac-badge ${band}">${t.avgFacility.toFixed(1)}%</span></td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    let aoCardHtml = '';
+    if (summaries.hasAOs) {
+      aoCardHtml = `
+        <div class="qla-summary-card">
+          <div class="qla-summary-card-header">
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" style="color: var(--brand-green);"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+            Assessment Objective (AO) Summary
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>AO</th>
+                  <th style="text-align: right;">Questions</th>
+                  <th style="text-align: right;">Total Marks</th>
+                  <th style="text-align: right;">Average Facility %</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${summaries.aos.map(a => {
+                  let band = 'secure';
+                  if (a.avgFacility >= strongThresh) band = 'strong';
+                  else if (a.avgFacility < weakThresh) band = 'weak';
+                  return `
+                    <tr>
+                      <td><strong>${escapeHtml(a.ao)}</strong></td>
+                      <td style="text-align: right;">${a.questionCount}</td>
+                      <td style="text-align: right;">${a.maxMarks}</td>
+                      <td style="text-align: right;"><span class="qla-fac-badge ${band}">${a.avgFacility.toFixed(1)}%</span></td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    summariesEl.innerHTML = topicCardHtml + aoCardHtml;
+  }
+}
+
+/**
+ * Render QLA "Classes" tab
+ */
+function renderQlaClassesTab() {
+  if (!currentQlaData || !currentQlaData.papers || currentQlaData.papers.length === 0) return;
+
+  const papers = currentQlaData.papers;
+
+  // 1. Collect distinct active classes across all papers
+  const classSet = new Set();
+  for (const p of papers) {
+    for (const s of p.students || []) {
+      const cls = s.activeClass || s.className || s.currentClass;
+      if (cls && cls !== 'Unassigned') classSet.add(cls);
+    }
+  }
+  const classes = Array.from(classSet).sort();
+  if (classes.length === 0) return;
+
+  // 2. Select class: default to first if not selected or invalid
+  if (!qlaClassesState.selectedClass || !classes.includes(qlaClassesState.selectedClass)) {
+    qlaClassesState.selectedClass = classes[0];
+  }
+  const selectedClass = qlaClassesState.selectedClass;
+
+  // 3. Populate Class selector dropdown
+  const classSelect = document.getElementById('qla-classes-class-select');
+  if (classSelect) {
+    classSelect.innerHTML = classes.map(c => `
+      <option value="${escapeHtml(c)}" ${c === selectedClass ? 'selected' : ''}>Class ${escapeHtml(c)}</option>
+    `).join('');
+  }
+
+  // 4. Calculate report using pure function
+  const report = calculateClassReport(papers, selectedClass, qlaQuestionsState.thresholds);
+
+  // 5. Render Header Line Stats
+  const headerStatsEl = document.getElementById('qla-class-header-stats');
+  if (headerStatsEl) {
+    const absencesText = report.absencesPerPaper.length > 0 ?
+      report.absencesPerPaper.map(p => {
+        const tierLabel = p.tier === 'Foundation' ? ' F' : p.tier === 'Higher' ? ' H' : '';
+        return `${escapeHtml(p.paper)}${tierLabel}: ${p.absentCount} absent`;
+      }).join(' · ') :
+      'None';
+
+    headerStatsEl.innerHTML = `
+      <div class="qla-class-header-title">
+        <span>Class <strong>${escapeHtml(report.className)}</strong> Report</span>
+      </div>
+      <div class="qla-class-header-metrics">
+        <span class="qla-class-metric-pill">
+          <strong>${report.totalStudents}</strong> ${report.totalStudents === 1 ? 'student' : 'students'} in class
+        </span>
+        <span class="qla-class-metric-pill">
+          <strong>${report.satAtLeastOneCount}</strong> sat at least one paper
+        </span>
+        <span class="qla-class-metric-pill" style="color: var(--text-muted);">
+          Absences: ${absencesText}
+        </span>
+      </div>
+    `;
+  }
+
+  // 6. Render Paper Summary Table
+  const paperTableEl = document.getElementById('qla-class-paper-table');
+  if (paperTableEl) {
+    paperTableEl.innerHTML = `
+      <thead>
+        <tr>
+          <th>Paper &amp; Tier</th>
+          <th style="text-align: right;">Class Students (Present)</th>
+          <th style="text-align: right;">Class Average %</th>
+          <th style="text-align: right;">Cohort Average %</th>
+          <th style="text-align: right;">Difference vs Cohort</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${report.paperSummaries.map(p => {
+          const tierBadge = p.tier ? `<span class="qla-tier-badge ${p.tier.toLowerCase()}" style="margin-left: 6px;">${p.tier}</span>` : '';
+          if (p.tooFew) {
+            return `
+              <tr style="opacity: 0.65; background: var(--bg-body);">
+                <td><strong>${escapeHtml(p.paper)}</strong> ${tierBadge}</td>
+                <td style="text-align: right;">${p.n}</td>
+                <td style="text-align: right;"><em style="color: var(--text-muted); font-size: 12px;">too few to compare</em></td>
+                <td style="text-align: right;">${p.cohortAvgPct !== null ? p.cohortAvgPct.toFixed(1) + '%' : '-'}</td>
+                <td style="text-align: right; color: var(--text-muted);">-</td>
+              </tr>
+            `;
+          }
+          const diffSign = p.diff > 0 ? '+' : '';
+          return `
+            <tr>
+              <td><strong>${escapeHtml(p.paper)}</strong> ${tierBadge}</td>
+              <td style="text-align: right;">${p.n}</td>
+              <td style="text-align: right;"><strong class="qla-cell-${p.band}" style="padding: 2px 6px; border-radius: 4px;">${p.classAvgPct.toFixed(1)}%</strong></td>
+              <td style="text-align: right;">${p.cohortAvgPct !== null ? p.cohortAvgPct.toFixed(1) + '%' : '-'}</td>
+              <td style="text-align: right;">
+                <span class="qla-cell-${p.band}" style="font-weight: 700; padding: 2px 6px; border-radius: 4px;">${diffSign}${p.diff.toFixed(1)} pts</span>
+              </td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    `;
+  }
+
+  // 7. Render Strongest and Weakest Paper for this Class strictly per tier
+  const highlightsEl = document.getElementById('qla-class-paper-highlights');
+  if (highlightsEl) {
+    const validTiers = Object.entries(report.tierHighlights?.byTier || {}).filter(([_, tData]) => tData.hasEnough);
+    if (validTiers.length === 0) {
+      highlightsEl.innerHTML = `
+        <div class="qla-class-highlight-item too-few" style="padding: 12px 16px; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 13px; color: var(--text-muted); width: 100%;">
+          Too few students across papers to compare strongest and weakest papers.
+        </div>
+      `;
+    } else {
+      const cardsHtml = validTiers.map(([tierName, tData]) => {
+        const s = tData.strongest;
+        const w = tData.weakest;
+        const sTierLabel = s.tier === 'Foundation' ? 'F' : s.tier === 'Higher' ? 'H' : '';
+        const wTierLabel = w.tier === 'Foundation' ? 'F' : w.tier === 'Higher' ? 'H' : '';
+
+        return `
+          <div class="qla-tier-card" style="border-left: 4px solid var(--brand-green);">
+            <div class="qla-tier-card-header">
+              <span class="qla-tier-card-title">Strongest Paper (${tierName})</span>
+              <span class="qla-tier-badge ${tierName.toLowerCase()}">${tierName}</span>
+            </div>
+            <div class="qla-tier-card-body">
+              <div class="qla-highlight-row">
+                <span class="qla-highlight-label">
+                  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" style="color: var(--brand-green);"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                  ${escapeHtml(s.paper)} ${sTierLabel}
+                </span>
+                <span class="qla-highlight-value">${s.avgPct.toFixed(1)}%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="qla-tier-card" style="border-left: 4px solid #dc2626;">
+            <div class="qla-tier-card-header">
+              <span class="qla-tier-card-title">Weakest Paper (${tierName})</span>
+              <span class="qla-tier-badge ${tierName.toLowerCase()}">${tierName}</span>
+            </div>
+            <div class="qla-tier-card-body">
+              <div class="qla-highlight-row">
+                <span class="qla-highlight-label">
+                  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" style="color: #dc2626;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                  ${escapeHtml(w.paper)} ${wTierLabel}
+                </span>
+                <span class="qla-highlight-value">${w.avgPct.toFixed(1)}%</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      highlightsEl.innerHTML = cardsHtml;
+    }
+  }
+
+  // 8. Render Best/Worst 3, Furthest Below, Beating Cohort
+  const bwCard = document.getElementById('qla-class-best-worst-card');
+  if (bwCard) {
+    if (!report.hasEnoughQuestionData) {
+      bwCard.innerHTML = `
+        <div class="qla-class-card-header">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" style="color: var(--brand-green);"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+          Best &amp; Worst Questions
+        </div>
+        <div style="font-size: 13px; color: var(--text-muted); padding: 12px 0;">Too few students (fewer than 5) to compare questions.</div>
+      `;
+    } else {
+      bwCard.innerHTML = `
+        <div class="qla-class-card-header">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" style="color: var(--brand-green);"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+          Best &amp; Worst Questions
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div>
+            <div style="font-size: 12px; font-weight: 700; color: #15803d; text-transform: uppercase; margin-bottom: 6px;">Best 3 Questions</div>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              ${report.bestQuestions.map(q => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: var(--bg-body); border-radius: var(--radius-sm); font-size: 12.5px;">
+                  <div>
+                    <strong>${escapeHtml(q.label)}</strong>
+                    <span style="color: var(--text-muted); font-size: 11px; margin-left: 4px;">(${escapeHtml(q.topic)})</span>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="qla-fac-badge strong">${q.classFacility.toFixed(1)}%</span>
+                    <span style="font-size: 11px; color: var(--text-muted);">(Cohort: ${q.cohortFacility.toFixed(1)}%)</span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          <div>
+            <div style="font-size: 12px; font-weight: 700; color: #b91c1c; text-transform: uppercase; margin-bottom: 6px;">Worst 3 Questions</div>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              ${report.worstQuestions.map(q => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: var(--bg-body); border-radius: var(--radius-sm); font-size: 12.5px;">
+                  <div>
+                    <strong>${escapeHtml(q.label)}</strong>
+                    <span style="color: var(--text-muted); font-size: 11px; margin-left: 4px;">(${escapeHtml(q.topic)})</span>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="qla-fac-badge weak">${q.classFacility.toFixed(1)}%</span>
+                    <span style="font-size: 11px; color: var(--text-muted);">(Cohort: ${q.cohortFacility.toFixed(1)}%)</span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  const fbCard = document.getElementById('qla-class-furthest-below-card');
+  if (fbCard) {
+    if (!report.hasEnoughQuestionData) {
+      fbCard.innerHTML = `
+        <div class="qla-class-card-header">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" style="color: #dc2626;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          Furthest Below Cohort
+        </div>
+        <div style="font-size: 13px; color: var(--text-muted); padding: 12px 0;">Too few students to compare.</div>
+      `;
+    } else if (report.furthestBelowCohort.length === 0) {
+      fbCard.innerHTML = `
+        <div class="qla-class-card-header">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" style="color: #dc2626;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          Furthest Below Cohort
+        </div>
+        <div style="font-size: 13px; color: var(--text-muted); padding: 12px 0;">✓ No questions below the cohort average.</div>
+      `;
+    } else {
+      fbCard.innerHTML = `
+        <div class="qla-class-card-header">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" style="color: #dc2626;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          Furthest Below Cohort (Largest Negative Gap)
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          ${report.furthestBelowCohort.map(q => `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: var(--bg-body); border-radius: var(--radius-sm); font-size: 12.5px;">
+              <div>
+                <strong>${escapeHtml(q.label)}</strong>
+                <span style="color: var(--text-muted); font-size: 11px; margin-left: 4px;">(${escapeHtml(q.topic)})</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="qla-gap-badge qla-gap-neg">${q.gap.toFixed(1)} pts</span>
+                <span style="font-size: 11px; color: var(--text-muted);">${q.classFacility.toFixed(1)}% vs ${q.cohortFacility.toFixed(1)}%</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+  }
+
+  const bcCard = document.getElementById('qla-class-beating-cohort-card');
+  if (bcCard) {
+    if (!report.hasEnoughQuestionData) {
+      bcCard.innerHTML = `
+        <div class="qla-class-card-header">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" style="color: var(--brand-green);"><polyline points="18 15 12 9 6 15"></polyline></svg>
+          Approaches worth sharing
+        </div>
+        <div style="font-size: 13px; color: var(--text-muted); padding: 12px 0;">Too few students to compare.</div>
+      `;
+    } else if (report.beatingCohort.length === 0) {
+      bcCard.innerHTML = `
+        <div class="qla-class-card-header">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" style="color: var(--brand-green);"><polyline points="18 15 12 9 6 15"></polyline></svg>
+          Approaches worth sharing
+        </div>
+        <div style="font-size: 13px; color: var(--text-muted); padding: 12px 0;">No questions above the cohort average.</div>
+      `;
+    } else {
+      bcCard.innerHTML = `
+        <div class="qla-class-card-header" style="color: #15803d;">
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" style="color: var(--brand-green);"><polyline points="18 15 12 9 6 15"></polyline></svg>
+          Approaches worth sharing (Beating Cohort)
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          ${report.beatingCohort.map(q => `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: var(--bg-body); border-radius: var(--radius-sm); font-size: 12.5px;">
+              <div>
+                <strong>${escapeHtml(q.label)}</strong>
+                <span style="color: var(--text-muted); font-size: 11px; margin-left: 4px;">(${escapeHtml(q.topic)})</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="qla-gap-badge qla-gap-pos">+${q.gap.toFixed(1)} pts</span>
+                <span style="font-size: 11px; color: var(--text-muted);">${q.classFacility.toFixed(1)}% vs ${q.cohortFacility.toFixed(1)}%</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+  }
+
+  // 9. Render Sortable Student List Table
+  const studentTableEl = document.getElementById('qla-class-student-table');
+  if (studentTableEl) {
+    const rawStudents = [...report.students];
+    const key = qlaClassesState.sortKey || 'name';
+    const dir = qlaClassesState.sortDir === 'desc' ? -1 : 1;
+
+    // Attach displayName to each student using getDisplayStudentName (Condition 3)
+    rawStudents.forEach((st, idx) => {
+      st._displayName = getDisplayStudentName(st, isNameHidden, idx + 1);
+    });
+
+    rawStudents.sort((a, b) => {
+      if (key === 'name') {
+        return a._displayName.localeCompare(b._displayName) * dir;
+      }
+      if (key === 'tier') {
+        return a.tier.localeCompare(b.tier) * dir;
+      }
+      if (key === 'weakestPaper') {
+        return a.weakestPaper.localeCompare(b.weakestPaper) * dir;
+      }
+      if (key === 'result') {
+        const resA = a.result !== null ? a.result : -1;
+        const resB = b.result !== null ? b.result : -1;
+        return (resA - resB) * dir;
+      }
+      if (key.startsWith('paper_')) {
+        const sheetName = key.replace('paper_', '');
+        const valA = a.paperPercentages[sheetName];
+        const valB = b.paperPercentages[sheetName];
+        if (valA === null || valA === undefined) return 1;
+        if (valB === null || valB === undefined) return -1;
+        return (valA - valB) * dir;
+      }
+      return 0;
+    });
+
+    const getSortIndicator = (colKey) => {
+      if (qlaClassesState.sortKey !== colKey) {
+        return `<span class="sort-indicator inactive">↕</span>`;
+      }
+      return `<span class="sort-indicator active">${qlaClassesState.sortDir === 'desc' ? '▼' : '▲'}</span>`;
+    };
+
+    const paperHeaders = report.paperSummaries.map(p => {
+      const colKey = `paper_${p.sheetName}`;
+      const tierShort = p.tier === 'Foundation' ? ' F' : p.tier === 'Higher' ? ' H' : '';
+      return `
+        <th data-c-sort="${escapeHtml(colKey)}" class="sortable" style="text-align: right;">
+          ${escapeHtml(p.paper)}${tierShort} % ${getSortIndicator(colKey)}
+        </th>
+      `;
+    }).join('');
+
+    const rowsHtml = rawStudents.map(st => {
+      const paperCells = report.paperSummaries.map(p => {
+        const status = st.paperStatuses[p.sheetName];
+        const pct = st.paperPercentages[p.sheetName];
+        if (status === 'absent') {
+          return `<td style="text-align: right; color: #dc2626; font-style: italic;">Absent</td>`;
+        }
+        if (pct !== null && pct !== undefined) {
+          return `<td style="text-align: right;"><strong>${pct.toFixed(1)}%</strong></td>`;
+        }
+        return `<td style="text-align: right; color: var(--text-muted);">-</td>`;
+      }).join('');
+
+      return `
+        <tr>
+          <td><strong>${escapeHtml(st._displayName)}</strong></td>
+          <td>${escapeHtml(st.tier)}</td>
+          ${paperCells}
+          <td>${escapeHtml(st.weakestPaper)}</td>
+          <td>${renderGradeBadge(st.displayResult)}</td>
+        </tr>
+      `;
+    }).join('');
+
+    studentTableEl.innerHTML = `
+      <thead>
+        <tr>
+          <th data-c-sort="name" class="sortable">Name ${getSortIndicator('name')}</th>
+          <th data-c-sort="tier" class="sortable">Tier ${getSortIndicator('tier')}</th>
+          ${paperHeaders}
+          <th data-c-sort="weakestPaper" class="sortable">Weakest Paper ${getSortIndicator('weakestPaper')}</th>
+          <th data-c-sort="result" class="sortable">Mock Result ${getSortIndicator('result')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rowsHtml}
+      </tbody>
+    `;
+
+    // Attach click events on header elements for sorting
+    const ths = studentTableEl.querySelectorAll('th[data-c-sort]');
+    ths.forEach(th => {
+      th.style.cursor = 'pointer';
+      th.addEventListener('click', () => {
+        const sortField = th.getAttribute('data-c-sort');
+        if (qlaClassesState.sortKey === sortField) {
+          qlaClassesState.sortDir = qlaClassesState.sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          qlaClassesState.sortKey = sortField;
+          if (sortField.startsWith('paper_') || sortField === 'result') {
+            qlaClassesState.sortDir = 'desc';
+          } else {
+            qlaClassesState.sortDir = 'asc';
+          }
+        }
+        renderQlaClassesTab();
+      });
+    });
+  }
+}
+
+/**
+ * Render QLA "Students" tab
+ */
+function renderQlaStudentsTab() {
+  if (!currentQlaData || !currentQlaData.papers || currentQlaData.papers.length === 0) return;
+
+  const papers = currentQlaData.papers;
+  const filters = qlaStudentsState.filters;
+  const isClassListsLoaded = classListsData !== null;
+
+  // 1. Calculate students report using pure function
+  const report = calculateStudentsReport(
+    papers,
+    filters,
+    qlaQuestionsState.thresholds,
+    { isClassListsLoaded }
+  );
+
+  // 2. Populate filters
+  // A. Class dropdown:
+  const classFilterSelect = document.getElementById('qla-students-filter-class');
+  if (classFilterSelect) {
+    const classSet = new Set();
+    for (const s of report.allStudents) {
+      if (s.activeClass && s.activeClass !== 'Unassigned') classSet.add(s.activeClass);
+    }
+    const sortedClasses = Array.from(classSet).sort();
+    const currentSelected = filters.className || 'ALL';
+
+    classFilterSelect.innerHTML = `
+      <option value="ALL" ${currentSelected === 'ALL' ? 'selected' : ''}>All classes</option>
+      ${sortedClasses.map(c => `
+        <option value="${escapeHtml(c)}" ${c === currentSelected ? 'selected' : ''}>Class ${escapeHtml(c)}</option>
+      `).join('')}
+    `;
+  }
+
+  // B. Weakest Paper dropdown:
+  const weakestFilterSelect = document.getElementById('qla-students-filter-weakest');
+  if (weakestFilterSelect) {
+    const currentSelected = filters.weakestPaper || 'ALL';
+    weakestFilterSelect.innerHTML = `
+      <option value="ALL" ${currentSelected === 'ALL' ? 'selected' : ''}>All weakest papers</option>
+      ${report.allWeakestPapers.map(wp => `
+        <option value="${escapeHtml(wp)}" ${wp === currentSelected ? 'selected' : ''}>${escapeHtml(wp)}</option>
+      `).join('')}
+    `;
+  }
+
+  // C. Badges / Count summary
+  const badgeEl = document.getElementById('qla-students-filter-count-badge');
+  if (badgeEl) {
+    badgeEl.textContent = `${report.students.length} of ${report.allStudents.length} students`;
+  }
+
+  const countSummaryEl = document.getElementById('qla-students-count-summary');
+  if (countSummaryEl) {
+    countSummaryEl.textContent = `Showing ${report.students.length} of ${report.allStudents.length} students`;
+  }
+
+  // 3. Render Skill Profile Table
+  const tableEl = document.getElementById('qla-students-profile-table');
+  const emptyStateEl = document.getElementById('qla-students-empty-state');
+
+  if (tableEl) {
+    if (report.students.length === 0) {
+      tableEl.innerHTML = '';
+      if (emptyStateEl) emptyStateEl.style.display = 'block';
+    } else {
+      if (emptyStateEl) emptyStateEl.style.display = 'none';
+
+      // Sort students based on sortKey and sortDir
+      const rawStudents = [...report.students];
+      const dir = qlaStudentsState.sortDir === 'desc' ? -1 : 1;
+
+      // Attach display name for each student using getDisplayStudentName
+      rawStudents.forEach((st, idx) => {
+        st._displayName = getDisplayStudentName(st, isNameHidden, idx + 1);
+      });
+
+      rawStudents.sort((a, b) => {
+        const key = qlaStudentsState.sortKey;
+        if (key === 'name') {
+          return dir * a._displayName.localeCompare(b._displayName);
+        }
+        if (key === 'class') {
+          return dir * (a.activeClass || '').localeCompare(b.activeClass || '');
+        }
+        if (key === 'tier') {
+          return dir * (a.tier || '').localeCompare(b.tier || '');
+        }
+        if (key.startsWith('paper_')) {
+          const sheetName = key.replace('paper_', '');
+          const valA = a.paperPercentages[sheetName] ?? -999;
+          const valB = b.paperPercentages[sheetName] ?? -999;
+          return dir * (valA - valB);
+        }
+        if (key === 'strongestPaper') {
+          return dir * (a.strongestPaper || '').localeCompare(b.strongestPaper || '');
+        }
+        if (key === 'weakestPaper') {
+          return dir * (a.weakestPaper || '').localeCompare(b.weakestPaper || '');
+        }
+        if (key === 'mockResult') {
+          const ptsA = a.points ?? -1;
+          const ptsB = b.points ?? -1;
+          return dir * (ptsA - ptsB);
+        }
+        if (key === 'gap') {
+          const gapA = a.gapValue ?? 999;
+          const gapB = b.gapValue ?? 999;
+          return dir * (gapA - gapB);
+        }
+        return 0;
+      });
+
+      const getSortIndicator = (colKey) => {
+        if (qlaStudentsState.sortKey !== colKey) {
+          return `<span class="sort-indicator inactive">↕</span>`;
+        }
+        return `<span class="sort-indicator active">${qlaStudentsState.sortDir === 'desc' ? '▼' : '▲'}</span>`;
+      };
+
+      const paperHeaders = report.papers.map(p => {
+        const colKey = `paper_${p.sheetName}`;
+        const tierShort = p.tier === 'Foundation' ? ' F' : p.tier === 'Higher' ? ' H' : '';
+        return `
+          <th data-st-sort="${escapeHtml(colKey)}" class="sortable" style="text-align: right;">
+            ${escapeHtml(p.paper)}${tierShort} % ${getSortIndicator(colKey)}
+          </th>
+        `;
+      }).join('');
+
+      const rowsHtml = rawStudents.map(st => {
+        const paperCells = report.papers.map(p => {
+          const status = st.paperStatuses[p.sheetName];
+          const pct = st.paperPercentages[p.sheetName];
+          if (status === 'absent') {
+            return `<td style="text-align: right; color: #dc2626; font-style: italic;">Absent</td>`;
+          }
+          if (pct !== null && pct !== undefined) {
+            return `<td style="text-align: right;"><strong>${pct.toFixed(1)}%</strong></td>`;
+          }
+          return `<td style="text-align: right; color: var(--text-muted);">-</td>`;
+        }).join('');
+
+        let mockResultHtml = `<span style="color: var(--text-muted); font-style: italic;">no mock data</span>`;
+        if (st.snapshotMatched && st.mockResult && st.mockResult !== 'no mock data') {
+          mockResultHtml = renderGradeBadge(st.mockResult);
+        }
+
+        let gapHtml = `<span style="color: var(--text-muted); font-style: italic;">no mock data</span>`;
+        if (st.snapshotMatched && st.gapValue !== null) {
+          if (st.gapValue === 0) {
+            gapHtml = `<span class="dist-band-pill band-at-above-5" style="padding: 2px 8px; font-size: 12px;">0</span>`;
+          } else if (st.gapValue === 1) {
+            gapHtml = `<span class="dist-band-pill band-one-away" style="padding: 2px 8px; font-size: 12px;">1</span>`;
+          } else if (st.gapValue === 2) {
+            gapHtml = `<span class="dist-band-pill band-two-away" style="padding: 2px 8px; font-size: 12px;">2</span>`;
+          } else {
+            gapHtml = `<span class="dist-band-pill band-three-plus-away" style="padding: 2px 8px; font-size: 12px;">${st.gapValue}</span>`;
+          }
+        }
+
+        return `
+          <tr>
+            <td><strong>${escapeHtml(st._displayName)}</strong></td>
+            <td>${escapeHtml(st.activeClass)}</td>
+            <td>${escapeHtml(st.tier)}</td>
+            ${paperCells}
+            <td>${escapeHtml(st.strongestPaper)}</td>
+            <td>${escapeHtml(st.weakestPaper)}</td>
+            <td>${mockResultHtml}</td>
+            <td>${gapHtml}</td>
+          </tr>
+        `;
+      }).join('');
+
+      tableEl.innerHTML = `
+        <thead>
+          <tr>
+            <th data-st-sort="name" class="sortable">Name ${getSortIndicator('name')}</th>
+            <th data-st-sort="class" class="sortable">Class ${getSortIndicator('class')}</th>
+            <th data-st-sort="tier" class="sortable">Tier ${getSortIndicator('tier')}</th>
+            ${paperHeaders}
+            <th data-st-sort="strongestPaper" class="sortable">Strongest Paper ${getSortIndicator('strongestPaper')}</th>
+            <th data-st-sort="weakestPaper" class="sortable">Weakest Paper ${getSortIndicator('weakestPaper')}</th>
+            <th data-st-sort="mockResult" class="sortable">Mock Result ${getSortIndicator('mockResult')}</th>
+            <th data-st-sort="gap" class="sortable">Gap to Grade 5 ${getSortIndicator('gap')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      `;
+
+      // Header click listeners for sorting
+      const ths = tableEl.querySelectorAll('th[data-st-sort]');
+      ths.forEach(th => {
+        th.style.cursor = 'pointer';
+        th.addEventListener('click', () => {
+          const sortField = th.getAttribute('data-st-sort');
+          if (qlaStudentsState.sortKey === sortField) {
+            qlaStudentsState.sortDir = qlaStudentsState.sortDir === 'asc' ? 'desc' : 'asc';
+          } else {
+            qlaStudentsState.sortKey = sortField;
+            if (sortField.startsWith('paper_') || sortField === 'mockResult') {
+              qlaStudentsState.sortDir = 'desc';
+            } else {
+              qlaStudentsState.sortDir = 'asc';
+            }
+          }
+          renderQlaStudentsTab();
+        });
+      });
+    }
+  }
+
+  // 4. Section 2: "Grade 4s by weakest paper" strictly separated by tier
+  const grade4Container = document.getElementById('qla-grade4-groups-container');
+  if (grade4Container) {
+    const fGroups = report.grade4sByWeakest?.foundation || [];
+    const hGroups = report.grade4sByWeakest?.higher || [];
+    const totalCount = fGroups.reduce((acc, g) => acc + g.count, 0) + hGroups.reduce((acc, g) => acc + g.count, 0);
+
+    if (totalCount === 0) {
+      grade4Container.innerHTML = `
+        <div style="padding: 16px; color: var(--text-muted); font-size: 13px; text-align: center;">
+          No students with Grade 4 found.
+        </div>
+      `;
+    } else {
+      const renderTierBlock = (tierName, groups) => {
+        const tierCount = groups.reduce((acc, g) => acc + g.count, 0);
+        const tierBadge = `<span class="qla-tier-badge ${tierName.toLowerCase()}">${tierCount} ${tierCount === 1 ? 'student' : 'students'}</span>`;
+
+        let bodyHtml = '';
+        if (groups.length === 0) {
+          bodyHtml = `<div style="font-size: 12.5px; color: var(--text-muted); font-style: italic; padding: 6px 0 10px;">None in ${tierName.toLowerCase()} tier.</div>`;
+        } else {
+          bodyHtml = groups.map(group => {
+            const toggleKey = `g4-${tierName}-${group.weakestPaper}`;
+            const isExpanded = qlaStudentsState.expandedGrade4.has(toggleKey) || qlaStudentsState.expandedGrade4.has(group.weakestPaper);
+            const studentRows = group.students.map((st, sIdx) => {
+              const displayName = getDisplayStudentName(st, isNameHidden, sIdx + 1);
+              return `
+                <tr>
+                  <td><strong>${escapeHtml(displayName)}</strong></td>
+                  <td>${escapeHtml(st.activeClass)}</td>
+                  <td>${renderGradeBadge(st.displayResult)}</td>
+                  <td style="color: var(--text-muted);">${escapeHtml(group.weakestPaper)}</td>
+                </tr>
+              `;
+            }).join('');
+
+            return `
+              <div class="qla-group-item ${isExpanded ? 'is-expanded' : ''}" data-g4-key="${escapeHtml(toggleKey)}">
+                <div class="qla-group-header" data-toggle-g4="${escapeHtml(toggleKey)}">
+                  <div class="qla-group-title">
+                    <strong>${escapeHtml(group.weakestPaper)}</strong>
+                    <span class="qla-group-badge highlight">${group.count} ${group.count === 1 ? 'student' : 'students'}</span>
+                  </div>
+                  <span class="qla-group-toggle-icon">▼</span>
+                </div>
+                ${isExpanded ? `
+                  <div class="qla-group-content">
+                    <table class="qla-sub-table">
+                      <thead>
+                        <tr>
+                          <th>Student</th>
+                          <th>Class</th>
+                          <th>Mock Result</th>
+                          <th>Weakest Paper</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${studentRows}
+                      </tbody>
+                    </table>
+                  </div>
+                ` : ''}
+              </div>
+            `;
+          }).join('');
+        }
+
+        return `
+          <div style="margin-bottom: 20px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; padding-bottom: 6px; border-bottom: 1px solid var(--border-color); margin-bottom: 10px;">
+              <span style="font-weight: 700; font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">
+                ${tierName} Tier
+              </span>
+              ${tierBadge}
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              ${bodyHtml}
+            </div>
+          </div>
+        `;
+      };
+
+      grade4Container.innerHTML = renderTierBlock('Foundation', fGroups) + renderTierBlock('Higher', hGroups);
+
+      grade4Container.querySelectorAll('[data-toggle-g4]').forEach(hdr => {
+        hdr.addEventListener('click', () => {
+          const key = hdr.getAttribute('data-toggle-g4');
+          if (qlaStudentsState.expandedGrade4.has(key)) {
+            qlaStudentsState.expandedGrade4.delete(key);
+          } else {
+            qlaStudentsState.expandedGrade4.add(key);
+          }
+          renderQlaStudentsTab();
+        });
+      });
+    }
+  }
+
+  // 5. Section 3: "Farthest from grade 5 by weakest paper" strictly separated by tier
+  const farthest5Container = document.getElementById('qla-farthest5-groups-container');
+  if (farthest5Container) {
+    const fGroups = report.farthestFrom5ByWeakest?.foundation || [];
+    const hGroups = report.farthestFrom5ByWeakest?.higher || [];
+    const totalCount = fGroups.reduce((acc, g) => acc + g.count, 0) + hGroups.reduce((acc, g) => acc + g.count, 0);
+
+    if (totalCount === 0) {
+      farthest5Container.innerHTML = `
+        <div style="padding: 16px; color: var(--text-muted); font-size: 13px; text-align: center;">
+          No students with gap ≥ 3 from grade 5 found.
+        </div>
+      `;
+    } else {
+      const renderTierBlock = (tierName, groups) => {
+        const tierCount = groups.reduce((acc, g) => acc + g.count, 0);
+        const tierBadge = `<span class="qla-tier-badge ${tierName.toLowerCase()}">${tierCount} ${tierCount === 1 ? 'student' : 'students'}</span>`;
+
+        let bodyHtml = '';
+        if (groups.length === 0) {
+          bodyHtml = `<div style="font-size: 12.5px; color: var(--text-muted); font-style: italic; padding: 6px 0 10px;">None in ${tierName.toLowerCase()} tier.</div>`;
+        } else {
+          bodyHtml = groups.map(group => {
+            const toggleKey = `f5-${tierName}-${group.weakestPaper}`;
+            const isExpanded = qlaStudentsState.expandedFarthest5.has(toggleKey) || qlaStudentsState.expandedFarthest5.has(group.weakestPaper);
+            const studentRows = group.students.map((st, sIdx) => {
+              const displayName = getDisplayStudentName(st, isNameHidden, sIdx + 1);
+              return `
+                <tr>
+                  <td><strong>${escapeHtml(displayName)}</strong></td>
+                  <td>${escapeHtml(st.activeClass)}</td>
+                  <td>${renderGradeBadge(st.displayResult)}</td>
+                  <td><span class="dist-band-pill band-three-plus-away" style="padding: 1px 6px; font-size: 11px;">Gap ${st.gapValue}</span></td>
+                  <td style="color: var(--text-muted);">${escapeHtml(group.weakestPaper)}</td>
+                </tr>
+              `;
+            }).join('');
+
+            return `
+              <div class="qla-group-item ${isExpanded ? 'is-expanded' : ''}" data-f5-key="${escapeHtml(toggleKey)}">
+                <div class="qla-group-header" data-toggle-f5="${escapeHtml(toggleKey)}">
+                  <div class="qla-group-title">
+                    <strong>${escapeHtml(group.weakestPaper)}</strong>
+                    <span class="qla-group-badge highlight">${group.count} ${group.count === 1 ? 'student' : 'students'}</span>
+                  </div>
+                  <span class="qla-group-toggle-icon">▼</span>
+                </div>
+                ${isExpanded ? `
+                  <div class="qla-group-content">
+                    <table class="qla-sub-table">
+                      <thead>
+                        <tr>
+                          <th>Student</th>
+                          <th>Class</th>
+                          <th>Mock Result</th>
+                          <th>Gap</th>
+                          <th>Weakest Paper</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${studentRows}
+                      </tbody>
+                    </table>
+                  </div>
+                ` : ''}
+              </div>
+            `;
+          }).join('');
+        }
+
+        return `
+          <div style="margin-bottom: 20px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; padding-bottom: 6px; border-bottom: 1px solid var(--border-color); margin-bottom: 10px;">
+              <span style="font-weight: 700; font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">
+                ${tierName} Tier
+              </span>
+              ${tierBadge}
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              ${bodyHtml}
+            </div>
+          </div>
+        `;
+      };
+
+      farthest5Container.innerHTML = renderTierBlock('Foundation', fGroups) + renderTierBlock('Higher', hGroups);
+
+      farthest5Container.querySelectorAll('[data-toggle-f5]').forEach(hdr => {
+        hdr.addEventListener('click', () => {
+          const key = hdr.getAttribute('data-toggle-f5');
+          if (qlaStudentsState.expandedFarthest5.has(key)) {
+            qlaStudentsState.expandedFarthest5.delete(key);
+          } else {
+            qlaStudentsState.expandedFarthest5.add(key);
+          }
+          renderQlaStudentsTab();
+        });
+      });
+    }
+  }
+
+  // 6. Section 4: "Weak on the same questions"
+  const weakQuestionsContainer = document.getElementById('qla-weak-questions-list-container');
+  if (weakQuestionsContainer) {
+    if (report.weakQuestions.length === 0) {
+      weakQuestionsContainer.innerHTML = `
+        <div style="padding: 16px; color: var(--text-muted); font-size: 13px; text-align: center;">
+          No questions below the weak threshold (${qlaQuestionsState.thresholds.weak}%).
+        </div>
+      `;
+    } else {
+      weakQuestionsContainer.innerHTML = report.weakQuestions.map(q => {
+        const itemKey = `${q.sheetName}__${q.key}`;
+        const isExpanded = qlaStudentsState.expandedWeakQuestions.has(itemKey);
+        const tierShort = q.tier === 'Foundation' ? ' F' : q.tier === 'Higher' ? ' H' : '';
+
+        const studentRows = q.students.map((st, sIdx) => {
+          const displayName = getDisplayStudentName(st, isNameHidden, sIdx + 1);
+          return `
+            <tr>
+              <td><strong>${escapeHtml(displayName)}</strong></td>
+              <td>${escapeHtml(st.activeClass)}</td>
+              <td>${st.mark} / ${st.maxMarks}</td>
+              <td><strong>${st.pct}%</strong></td>
+            </tr>
+          `;
+        }).join('');
+
+        return `
+          <div class="qla-group-item ${isExpanded ? 'is-expanded' : ''}">
+            <div class="qla-group-header" data-toggle-wq="${escapeHtml(itemKey)}">
+              <div class="qla-group-title">
+                <span class="qla-fac-badge weak">${q.facility.toFixed(1)}%</span>
+                <span><strong>${escapeHtml(q.paper)}${tierShort}</strong>: ${escapeHtml(q.label)} ${q.topic ? `(${escapeHtml(q.topic)})` : ''}</span>
+                <span class="qla-group-badge">${q.weakStudentCount} ${q.weakStudentCount === 1 ? 'student' : 'students'} &lt; 50%</span>
+              </div>
+              <span class="qla-group-toggle-icon">▼</span>
+            </div>
+            ${isExpanded ? `
+              <div class="qla-group-content">
+                <table class="qla-sub-table">
+                  <thead>
+                    <tr>
+                      <th>Student</th>
+                      <th>Class</th>
+                      <th>Mark</th>
+                      <th>Score %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${studentRows.length > 0 ? studentRows : `<tr><td colspan="4" style="color: var(--text-muted); text-align: center;">No students scored under 50% on this question.</td></tr>`}
+                  </tbody>
+                </table>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+
+      weakQuestionsContainer.querySelectorAll('[data-toggle-wq]').forEach(hdr => {
+        hdr.addEventListener('click', () => {
+          const key = hdr.getAttribute('data-toggle-wq');
+          if (qlaStudentsState.expandedWeakQuestions.has(key)) {
+            qlaStudentsState.expandedWeakQuestions.delete(key);
+          } else {
+            qlaStudentsState.expandedWeakQuestions.add(key);
+          }
+          renderQlaStudentsTab();
+        });
+      });
+    }
+  }
+
+  // 7. Section 5: Group Gaps Table
+  const groupGapsTableEl = document.getElementById('qla-group-gaps-table');
+  if (groupGapsTableEl) {
+    const rowsHtml = [];
+
+    report.groupGaps.forEach(pGap => {
+      const tierShort = pGap.tier === 'Foundation' ? ' F' : pGap.tier === 'Higher' ? ' H' : '';
+      const paperName = `${pGap.paper}${tierShort}`;
+
+      pGap.comparisons.forEach(comp => {
+        let gapDisplay = '-';
+        if (comp.tooFew) {
+          gapDisplay = `<span class="qla-too-few-dimmed" title="too few to compare">too few (&lt; 5)</span>`;
+        } else if (comp.gap !== null) {
+          const gapClass = comp.gap > 0 ? 'qla-gap-pos' : comp.gap < 0 ? 'qla-gap-neg' : '';
+          const sign = comp.gap > 0 ? '+' : '';
+          gapDisplay = `<span class="qla-gap-badge ${gapClass}">${sign}${comp.gap.toFixed(1)} pp</span>`;
+        }
+
+        const avgADisplay = comp.avgA !== null ? `${comp.avgA.toFixed(1)}% (n=${comp.nA})` : 'n/a';
+        const avgBDisplay = comp.avgB !== null ? `${comp.avgB.toFixed(1)}% (n=${comp.nB})` : 'n/a';
+
+        rowsHtml.push(`
+          <tr class="${comp.tooFew ? 'qla-too-few-dimmed' : ''}">
+            <td><strong>${escapeHtml(paperName)}</strong></td>
+            <td>${escapeHtml(comp.title)}</td>
+            <td style="text-align: right;">${escapeHtml(avgADisplay)}</td>
+            <td style="text-align: right;">${escapeHtml(avgBDisplay)}</td>
+            <td style="text-align: right;">${gapDisplay}</td>
+          </tr>
+        `);
+      });
+    });
+
+    groupGapsTableEl.innerHTML = `
+      <thead>
+        <tr>
+          <th>Paper &amp; Tier</th>
+          <th>Comparison</th>
+          <th style="text-align: right;">Group A Average</th>
+          <th style="text-align: right;">Group B Average</th>
+          <th style="text-align: right;">Points Gap</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rowsHtml.length > 0 ? rowsHtml.join('') : '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No paper data available.</td></tr>'}
+      </tbody>
+    `;
+  }
+
+  // 8. Section 6: Missed Papers Table
+  const missedPapersTableEl = document.getElementById('qla-missed-papers-table');
+  if (missedPapersTableEl) {
+    if (report.missedPapersStudents.length === 0) {
+      missedPapersTableEl.innerHTML = `
+        <tbody>
+          <tr>
+            <td style="text-align: center; color: var(--text-muted); padding: 18px;">
+              No students missed any papers.
+            </td>
+          </tr>
+        </tbody>
+      `;
+    } else {
+      const rowsHtml = report.missedPapersStudents.map((st, idx) => {
+        const displayName = getDisplayStudentName(st, isNameHidden, idx + 1);
+        const tagsHtml = st.missedPapers.map(p => `
+          <span style="display: inline-block; background: #fee2e2; color: #991b1b; padding: 2px 8px; border-radius: 4px; font-size: 11.5px; font-weight: 600; margin-right: 6px; margin-bottom: 2px;">
+            ${escapeHtml(p)}
+          </span>
+        `).join('');
+
+        return `
+          <tr>
+            <td><strong>${escapeHtml(displayName)}</strong></td>
+            <td>${escapeHtml(st.activeClass)}</td>
+            <td style="text-align: center;"><span class="badge" style="background:#fef3c7; color:#92400e; font-weight:700;">${st.missedCount}</span></td>
+            <td>${tagsHtml}</td>
+          </tr>
+        `;
+      }).join('');
+
+      missedPapersTableEl.innerHTML = `
+        <thead>
+          <tr>
+            <th>Student Name</th>
+            <th>Class</th>
+            <th style="text-align: center;">Missed Papers Count</th>
+            <th>Papers Missed</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      `;
+    }
+  }
+}
+
+/**
+ * Safely copy text to clipboard with textarea fallback
+ */
+async function copyToClipboard(text) {
+  if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    return navigator.clipboard.writeText(text);
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  try {
+    document.execCommand('copy');
+  } finally {
+    document.body.removeChild(textarea);
+  }
+}
+
+/**
+ * Render QLA "QLA actions" tab
+ */
+/**
+ * Render QLA "QLA actions" tab
+ */
+function renderQlaActionsTab() {
+  if (!currentQlaData || !currentQlaData.papers || currentQlaData.papers.length === 0) return;
+
+  const actionData = generateQlaActions(currentQlaData.papers, {
+    thresholds: qlaActionsState.thresholds,
+    isClassListsLoaded: classListsData !== null
+  });
+
+  const countBadge = document.getElementById('qla-actions-count-badge');
+  if (countBadge) {
+    countBadge.textContent = `${actionData.totalActions} action${actionData.totalActions === 1 ? '' : 's'}`;
+  }
+
+  const emptyState = document.getElementById('qla-actions-empty-state');
+  const cardTopPriorities = document.getElementById('qla-actions-card-top-priorities');
+  const toggleAllContainer = document.getElementById('qla-toggle-all-actions-container');
+  const allActionsContainer = document.getElementById('qla-all-actions-container');
+
+  if (actionData.totalActions === 0) {
+    if (emptyState) emptyState.style.display = 'block';
+    if (cardTopPriorities) cardTopPriorities.style.display = 'none';
+    if (toggleAllContainer) toggleAllContainer.style.display = 'none';
+    if (allActionsContainer) allActionsContainer.style.display = 'none';
+    return;
+  }
+
+  if (emptyState) emptyState.style.display = 'none';
+  if (cardTopPriorities) cardTopPriorities.style.display = 'block';
+  if (toggleAllContainer) toggleAllContainer.style.display = 'block';
+
+  // Helper to render drawer for an action
+  const renderDrawerHtml = (action) => {
+    const isExpanded = qlaActionsState.expandedActions.has(action.id);
+    if (!isExpanded) return '';
+
+    if (!action.students || action.students.length === 0) {
+      return `
+        <div class="qla-action-students-drawer" id="drawer-${action.id}">
+          <div style="font-size: 12.5px; color: var(--text-muted); font-style: italic;">
+            Department-wide action — no individual student list attached.
+          </div>
+        </div>
+      `;
+    }
+
+    const hasMarks = action.students.some(s => s.mark !== undefined);
+    const hasPct = action.students.some(s => s.pct !== undefined);
+    const hasDetail = action.students.some(s => s.detail || s.mockResult || s.weakestPaper);
+
+    const studentRows = action.students.map((st, idx) => {
+      let stObj = st;
+      if ((!st.surname || !st.firstName) && st.name && st.name.includes(',')) {
+        const parts = st.name.split(',');
+        stObj = { ...st, surname: parts[0].trim(), firstName: parts.slice(1).join(',').trim() };
+      }
+      const displayName = getDisplayStudentName(stObj, isNameHidden, idx + 1);
+      const classDisplay = st.activeClass || st.className || '—';
+      const markDisplay = st.mark !== undefined ? `${st.mark} / ${st.maxMarks}` : '—';
+      const pctDisplay = st.pct !== undefined ? `${st.pct}%` : '—';
+      const detailDisplay = st.detail || (st.mockResult ? `Grade: ${st.mockResult}` : '') || '';
+
+      return `
+        <tr>
+          <td><strong>${escapeHtml(displayName)}</strong></td>
+          <td>${escapeHtml(classDisplay)}</td>
+          ${hasMarks ? `<td style="text-align: right;">${escapeHtml(markDisplay)}</td>` : ''}
+          ${hasPct ? `<td style="text-align: right;">${escapeHtml(pctDisplay)}</td>` : ''}
+          ${hasDetail ? `<td>${escapeHtml(detailDisplay)}</td>` : ''}
+        </tr>
+      `;
+    }).join('');
+
+    return `
+      <div class="qla-action-students-drawer" id="drawer-${action.id}">
+        <div style="margin-bottom: 8px; font-size: 12px; font-weight: 600; color: var(--text-secondary);">
+          Students affected (${action.students.length}):
+        </div>
+        <div class="table-responsive" style="margin: 0; max-height: 240px; overflow-y: auto;">
+          <table class="data-table" style="font-size: 12px; margin-bottom: 0;">
+            <thead>
+              <tr>
+                <th>Student Name</th>
+                <th>Class</th>
+                ${hasMarks ? '<th style="text-align: right;">Mark</th>' : ''}
+                ${hasPct ? '<th style="text-align: right;">Score %</th>' : ''}
+                ${hasDetail ? '<th>Detail</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${studentRows}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  };
+
+  // 1. Render Top Priorities
+  const topTitle = document.getElementById('qla-top-priorities-title');
+  if (topTitle) {
+    topTitle.innerHTML = `
+      <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" style="color: var(--brand-dark);"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+      Top ${actionData.topPriorities.length} priorities
+    `;
+  }
+
+  const topPrioritiesList = document.getElementById('qla-top-priorities-list');
+  if (topPrioritiesList) {
+    if (actionData.topPriorities.length === 0) {
+      topPrioritiesList.innerHTML = `<div style="padding: 16px; color: var(--text-muted); font-size: 13px; font-style: italic;">No priorities currently identified.</div>`;
+    } else {
+      topPrioritiesList.innerHTML = actionData.topPriorities.map((action, idx) => {
+        const priorityNum = idx + 1;
+        const isExpanded = qlaActionsState.expandedActions.has(action.id);
+        const tierBadgeClass = action.tier === 'Foundation' ? 'foundation' : action.tier === 'Higher' ? 'higher' : 'cohort';
+        const numStudents = action.studentsAffected || 0;
+        const drawerHtml = renderDrawerHtml(action);
+
+        return `
+          <div class="qla-action-card priority-item" id="top-priority-${priorityNum}">
+            <div class="qla-action-main">
+              <div style="display: flex; align-items: flex-start; gap: 12px; flex: 1; min-width: 260px;">
+                <div class="priority-rank-num" title="Priority ${priorityNum}">
+                  ${priorityNum}
+                </div>
+                <div class="qla-action-title-area">
+                  <div class="qla-action-badges-row">
+                    <span class="qla-tier-badge ${tierBadgeClass}">${escapeHtml(action.paperAndTier || action.paper || '')}</span>
+                    ${action.question ? `<span class="badge" style="background:#e0f2fe; color:#0369a1; font-weight:600; font-size:11px;">${escapeHtml(action.question)}</span>` : ''}
+                    ${action.targetGroup ? `<span class="badge" style="background:#fef3c7; color:#92400e; font-weight:600; font-size:11px;">${escapeHtml(action.targetGroup)}</span>` : ''}
+                  </div>
+                  <div class="qla-action-title">${escapeHtml(action.title)}</div>
+                  ${action.why ? `<div class="qla-action-why">${escapeHtml(action.why)}</div>` : ''}
+                </div>
+              </div>
+              <div class="qla-action-metrics-area">
+                <span class="qla-action-affected-pill">
+                  <strong>${numStudents}</strong> student${numStudents === 1 ? '' : 's'}
+                </span>
+                <button type="button" class="qla-action-btn-show" data-action-toggle="${action.id}" aria-expanded="${isExpanded}">
+                  ${isExpanded ? 'Hide students' : 'Show students'}
+                </button>
+              </div>
+            </div>
+            ${drawerHtml}
+          </div>
+        `;
+      }).join('');
+    }
+  }
+
+  // 2. Render Full List Toggle Button & Container
+  const btnToggleAll = document.getElementById('btn-toggle-all-actions');
+  const toggleIcon = document.getElementById('toggle-all-actions-icon');
+  const toggleText = document.getElementById('toggle-all-actions-text');
+
+  if (btnToggleAll && toggleText && toggleIcon && allActionsContainer) {
+    btnToggleAll.setAttribute('aria-expanded', qlaActionsState.showAllActions ? 'true' : 'false');
+    toggleIcon.textContent = qlaActionsState.showAllActions ? '▼' : '▶';
+    toggleText.textContent = qlaActionsState.showAllActions
+      ? `Hide full action list (${actionData.totalActions})`
+      : `Show all actions (${actionData.totalActions})`;
+    allActionsContainer.style.display = qlaActionsState.showAllActions ? 'block' : 'none';
+
+    btnToggleAll.onclick = () => {
+      qlaActionsState.showAllActions = !qlaActionsState.showAllActions;
+      renderQlaActionsTab();
+    };
+  }
+
+  // 3. Render Full List Categories
+  const deptActions = actionData.byCategory['Whole department'] || [];
+  const classActions = actionData.byCategory['Class level'] || [];
+  const studentActions = actionData.byCategory['Students'] || [];
+
+  const badgeDept = document.getElementById('qla-actions-badge-dept');
+  if (badgeDept) badgeDept.textContent = `${deptActions.length} action${deptActions.length === 1 ? '' : 's'}`;
+
+  const badgeClass = document.getElementById('qla-actions-badge-class');
+  if (badgeClass) badgeClass.textContent = `${classActions.length} action${classActions.length === 1 ? '' : 's'}`;
+
+  const badgeStudents = document.getElementById('qla-actions-badge-students');
+  if (badgeStudents) badgeStudents.textContent = `${studentActions.length} action${studentActions.length === 1 ? '' : 's'}`;
+
+  const renderActionList = (actionsList, categoryClass) => {
+    if (actionsList.length === 0) {
+      return `<div style="padding: 16px; color: var(--text-muted); font-size: 13px; font-style: italic;">No actions currently required in this category.</div>`;
+    }
+
+    return actionsList.map(action => {
+      const isExpanded = qlaActionsState.expandedActions.has(action.id);
+      const tierBadgeClass = action.tier === 'Foundation' ? 'foundation' : action.tier === 'Higher' ? 'higher' : 'cohort';
+      const numStudents = action.studentsAffected || 0;
+      const drawerHtml = renderDrawerHtml(action);
+
+      return `
+        <div class="qla-action-card ${categoryClass}" id="${action.id}">
+          <div class="qla-action-main">
+            <div class="qla-action-title-area">
+              <div class="qla-action-badges-row">
+                <span class="qla-tier-badge ${tierBadgeClass}">${escapeHtml(action.paperAndTier || action.paper || '')}</span>
+                ${action.question ? `<span class="badge" style="background:#e0f2fe; color:#0369a1; font-weight:600; font-size:11px;">${escapeHtml(action.question)}</span>` : ''}
+                ${action.targetGroup ? `<span class="badge" style="background:#fef3c7; color:#92400e; font-weight:600; font-size:11px;">${escapeHtml(action.targetGroup)}</span>` : ''}
+              </div>
+              <div class="qla-action-title">${escapeHtml(action.title)}</div>
+              ${action.why ? `<div class="qla-action-why">${escapeHtml(action.why)}</div>` : ''}
+            </div>
+            <div class="qla-action-metrics-area">
+              <span class="qla-action-affected-pill">
+                <strong>${numStudents}</strong> student${numStudents === 1 ? '' : 's'} affected
+              </span>
+              <button type="button" class="qla-action-btn-show" data-action-toggle="${action.id}" aria-expanded="${isExpanded}">
+                ${isExpanded ? 'Hide students' : 'Show students'}
+              </button>
+            </div>
+          </div>
+          ${drawerHtml}
+        </div>
+      `;
+    }).join('');
+  };
+
+  const listDept = document.getElementById('qla-actions-list-dept');
+  if (listDept) listDept.innerHTML = renderActionList(deptActions, 'dept');
+
+  const listClass = document.getElementById('qla-actions-list-class');
+  if (listClass) listClass.innerHTML = renderActionList(classActions, 'class-level');
+
+  const listStudents = document.getElementById('qla-actions-list-students');
+  if (listStudents) listStudents.innerHTML = renderActionList(studentActions, 'students');
+
+  // Attach click listeners for all "Show students" buttons (Top priorities + Full list)
+  const container = document.getElementById('pane-actions');
+  if (container) {
+    container.querySelectorAll('[data-action-toggle]').forEach(btn => {
+      btn.onclick = () => {
+        const actionId = btn.getAttribute('data-action-toggle');
+        if (qlaActionsState.expandedActions.has(actionId)) {
+          qlaActionsState.expandedActions.delete(actionId);
+        } else {
+          qlaActionsState.expandedActions.add(actionId);
+        }
+        renderQlaActionsTab();
+      };
+    });
+  }
 }
 
 async function processFile(file) {
@@ -2124,8 +5287,9 @@ async function processFile(file) {
   if (errorEl) errorEl.style.display = 'none';
 
   try {
-    // Clearing snapshot also clears class lists
+    // Clearing snapshot also clears class lists and QLA
     clearClassLists();
+    clearQlaData();
 
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
@@ -2181,6 +5345,12 @@ async function processFile(file) {
 
     // Render Mismatch Lists
     renderClassMismatchLists();
+
+    // Render Movement and Class Balance if class lists loaded
+    renderMovementAndBalanceSection();
+
+    // Enable QLA Card now that snapshot is loaded
+    enableQlaCard();
 
     // Hide empty card
     if (emptyCard) {
@@ -2461,10 +5631,35 @@ export function initApp() {
   const btnCancelSettings = document.getElementById('btn-cancel-settings');
   const btnSaveSettings = document.getElementById('btn-save-settings');
   const settingHideNames = document.getElementById('setting-hide-names');
+  const settingQlaStrong = document.getElementById('setting-qla-facility-strong');
+  const settingQlaWeak = document.getElementById('setting-qla-facility-weak');
 
   if (btnOpenSettings && settingsModal) {
     btnOpenSettings.addEventListener('click', () => {
       if (settingHideNames) settingHideNames.checked = isNameHidden;
+      if (settingQlaStrong) settingQlaStrong.value = qlaQuestionsState.thresholds.strong;
+      if (settingQlaWeak) settingQlaWeak.value = qlaQuestionsState.thresholds.weak;
+      const settingActionClassGap = document.getElementById('setting-qla-action-class-gap');
+      const settingActionZeroRate = document.getElementById('setting-qla-action-zero-rate');
+      const settingActionDemoGap = document.getElementById('setting-qla-action-demo-gap');
+      const settingActionAbsenceRate = document.getElementById('setting-qla-action-absence-rate');
+      const settingActionTopPriorities = document.getElementById('setting-qla-action-top-priorities');
+      if (settingActionClassGap) settingActionClassGap.value = qlaActionsState.thresholds.classGap;
+      if (settingActionZeroRate) settingActionZeroRate.value = qlaActionsState.thresholds.zeroRate;
+      if (settingActionDemoGap) settingActionDemoGap.value = qlaActionsState.thresholds.demoGap;
+      if (settingActionAbsenceRate) settingActionAbsenceRate.value = qlaActionsState.thresholds.absenceRate;
+      if (settingActionTopPriorities) settingActionTopPriorities.value = qlaActionsState.thresholds.topPrioritiesCount;
+
+      const settingMovementGradeGap = document.getElementById('setting-movement-grade-gap');
+      const settingMovementThreeAway = document.getElementById('setting-movement-three-away');
+      const settingMovementSenGap = document.getElementById('setting-movement-sen-gap');
+      const settingMovementDisadvGap = document.getElementById('setting-movement-disadv-gap');
+      const settingMovementNoMockRate = document.getElementById('setting-movement-no-mock-rate');
+      if (settingMovementGradeGap) settingMovementGradeGap.value = movementState.thresholds.gradeGap;
+      if (settingMovementThreeAway) settingMovementThreeAway.value = movementState.thresholds.threeOrMoreConcentration;
+      if (settingMovementSenGap) settingMovementSenGap.value = movementState.thresholds.senGap;
+      if (settingMovementDisadvGap) settingMovementDisadvGap.value = movementState.thresholds.disadvantagedGap;
+      if (settingMovementNoMockRate) settingMovementNoMockRate.value = movementState.thresholds.noMockRate;
       settingsModal.style.display = 'flex';
     });
   }
@@ -2479,8 +5674,54 @@ export function initApp() {
   if (btnSaveSettings) {
     btnSaveSettings.addEventListener('click', () => {
       isNameHidden = !!settingHideNames?.checked;
+      const strongVal = parseFloat(settingQlaStrong?.value);
+      const weakVal = parseFloat(settingQlaWeak?.value);
+      if (!isNaN(strongVal)) qlaQuestionsState.thresholds.strong = strongVal;
+      if (!isNaN(weakVal)) {
+        qlaQuestionsState.thresholds.weak = weakVal;
+        qlaActionsState.thresholds.weakFacility = weakVal;
+      }
+
+      const classGapVal = parseFloat(document.getElementById('setting-qla-action-class-gap')?.value);
+      const zeroRateVal = parseFloat(document.getElementById('setting-qla-action-zero-rate')?.value);
+      const demoGapVal = parseFloat(document.getElementById('setting-qla-action-demo-gap')?.value);
+      const absenceRateVal = parseFloat(document.getElementById('setting-qla-action-absence-rate')?.value);
+      const topPrioritiesVal = parseInt(document.getElementById('setting-qla-action-top-priorities')?.value, 10);
+
+      if (!isNaN(classGapVal) && classGapVal > 0) qlaActionsState.thresholds.classGap = classGapVal;
+      if (!isNaN(zeroRateVal) && zeroRateVal >= 0) qlaActionsState.thresholds.zeroRate = zeroRateVal;
+      if (!isNaN(demoGapVal) && demoGapVal > 0) qlaActionsState.thresholds.demoGap = demoGapVal;
+      if (!isNaN(absenceRateVal) && absenceRateVal >= 0) qlaActionsState.thresholds.absenceRate = absenceRateVal;
+      if (!isNaN(topPrioritiesVal) && topPrioritiesVal > 0) qlaActionsState.thresholds.topPrioritiesCount = topPrioritiesVal;
+
+      const movGradeGapVal = parseFloat(document.getElementById('setting-movement-grade-gap')?.value);
+      const movThreeAwayVal = parseFloat(document.getElementById('setting-movement-three-away')?.value);
+      const movSenGapVal = parseFloat(document.getElementById('setting-movement-sen-gap')?.value);
+      const movDisadvGapVal = parseFloat(document.getElementById('setting-movement-disadv-gap')?.value);
+      const movNoMockRateVal = parseFloat(document.getElementById('setting-movement-no-mock-rate')?.value);
+
+      if (!isNaN(movGradeGapVal) && movGradeGapVal > 0) movementState.thresholds.gradeGap = movGradeGapVal;
+      if (!isNaN(movThreeAwayVal) && movThreeAwayVal > 0) movementState.thresholds.threeOrMoreConcentration = movThreeAwayVal;
+      if (!isNaN(movSenGapVal) && movSenGapVal >= 0) movementState.thresholds.senGap = movSenGapVal;
+      if (!isNaN(movDisadvGapVal) && movDisadvGapVal >= 0) movementState.thresholds.disadvantagedGap = movDisadvGapVal;
+      if (!isNaN(movNoMockRateVal) && movNoMockRateVal >= 0) movementState.thresholds.noMockRate = movNoMockRateVal;
+
       try {
-        localStorage.setItem(SETTINGS_KEY, JSON.stringify({ hideNames: isNameHidden }));
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+          hideNames: isNameHidden,
+          qlaFacilityStrong: qlaQuestionsState.thresholds.strong,
+          qlaFacilityWeak: qlaQuestionsState.thresholds.weak,
+          qlaActionClassGap: qlaActionsState.thresholds.classGap,
+          qlaActionZeroRate: qlaActionsState.thresholds.zeroRate,
+          qlaActionDemoGap: qlaActionsState.thresholds.demoGap,
+          qlaActionAbsenceRate: qlaActionsState.thresholds.absenceRate,
+          qlaActionTopPriorities: qlaActionsState.thresholds.topPrioritiesCount,
+          movementGradeGap: movementState.thresholds.gradeGap,
+          movementThreeAway: movementState.thresholds.threeOrMoreConcentration,
+          movementSenGap: movementState.thresholds.senGap,
+          movementDisadvGap: movementState.thresholds.disadvantagedGap,
+          movementNoMockRate: movementState.thresholds.noMockRate
+        }));
       } catch (e) {
         console.warn('Could not save settings to localStorage:', e);
       }
@@ -2488,7 +5729,12 @@ export function initApp() {
       renderOverviewSection();
       renderDistanceSection(false);
       renderStudentGroupsSection(false);
+      renderMovementAndBalanceSection();
       renderClassMismatchLists();
+      renderQlaQuestionsTab();
+      renderQlaClassesTab();
+      renderQlaStudentsTab();
+      renderQlaActionsTab();
       closeSettingsModal();
       showToast('Settings saved.');
     });
@@ -2500,7 +5746,8 @@ export function initApp() {
     quickHideNamesBtn.addEventListener('click', () => {
       isNameHidden = !isNameHidden;
       try {
-        localStorage.setItem(SETTINGS_KEY, JSON.stringify({ hideNames: isNameHidden }));
+        const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...saved, hideNames: isNameHidden }));
       } catch (e) {
         console.warn('Could not save settings to localStorage:', e);
       }
@@ -2508,7 +5755,11 @@ export function initApp() {
       renderOverviewSection();
       renderDistanceSection(false);
       renderStudentGroupsSection(false);
+      renderMovementAndBalanceSection();
       renderClassMismatchLists();
+      renderQlaClassesTab();
+      renderQlaStudentsTab();
+      renderQlaActionsTab();
       showToast(isNameHidden ? 'Student names hidden (privacy mode on).' : 'Student names visible.');
     });
   }
@@ -2645,6 +5896,36 @@ export function initApp() {
   // 10. New Classes & Group by Controls
   initNewClassesHandlers();
 
+  // 11. QLA Upload & Tabs Controls
+  initQlaHandlers();
+
+  // 12. QLA Actions Controls
+  const btnCopyActionsEmail = document.getElementById('btn-copy-qla-actions-email');
+  if (btnCopyActionsEmail) {
+    btnCopyActionsEmail.addEventListener('click', async () => {
+      if (!currentQlaData || !currentQlaData.papers || currentQlaData.papers.length === 0) {
+        showToast('No QLA data loaded to copy actions.');
+        return;
+      }
+      const actionData = generateQlaActions(currentQlaData.papers, {
+        thresholds: qlaActionsState.thresholds,
+        isClassListsLoaded: classListsData !== null
+      });
+      const emailText = formatActionsAsEmailText(actionData, {
+        dateStr: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
+        schoolName: 'Dixons Unity Academy',
+        isNameHidden: isNameHidden
+      });
+      try {
+        await copyToClipboard(emailText);
+        showToast('Actions copied to clipboard as email text.');
+      } catch (err) {
+        console.warn('Clipboard write failed:', err);
+        showToast('Failed to copy to clipboard.');
+      }
+    });
+  }
+
   // Load saved settings
   try {
     const saved = localStorage.getItem(SETTINGS_KEY);
@@ -2652,6 +5933,43 @@ export function initApp() {
       const parsed = JSON.parse(saved);
       if (parsed.hideNames !== undefined) {
         isNameHidden = !!parsed.hideNames;
+      }
+      if (parsed.qlaFacilityStrong !== undefined && !isNaN(Number(parsed.qlaFacilityStrong))) {
+        qlaQuestionsState.thresholds.strong = Number(parsed.qlaFacilityStrong);
+      }
+      if (parsed.qlaFacilityWeak !== undefined && !isNaN(Number(parsed.qlaFacilityWeak))) {
+        qlaQuestionsState.thresholds.weak = Number(parsed.qlaFacilityWeak);
+        qlaActionsState.thresholds.weakFacility = Number(parsed.qlaFacilityWeak);
+      }
+      if (parsed.qlaActionClassGap !== undefined && !isNaN(Number(parsed.qlaActionClassGap))) {
+        qlaActionsState.thresholds.classGap = Number(parsed.qlaActionClassGap);
+      }
+      if (parsed.qlaActionZeroRate !== undefined && !isNaN(Number(parsed.qlaActionZeroRate))) {
+        qlaActionsState.thresholds.zeroRate = Number(parsed.qlaActionZeroRate);
+      }
+      if (parsed.qlaActionDemoGap !== undefined && !isNaN(Number(parsed.qlaActionDemoGap))) {
+        qlaActionsState.thresholds.demoGap = Number(parsed.qlaActionDemoGap);
+      }
+      if (parsed.qlaActionAbsenceRate !== undefined && !isNaN(Number(parsed.qlaActionAbsenceRate))) {
+        qlaActionsState.thresholds.absenceRate = Number(parsed.qlaActionAbsenceRate);
+      }
+      if (parsed.qlaActionTopPriorities !== undefined && !isNaN(Number(parsed.qlaActionTopPriorities))) {
+        qlaActionsState.thresholds.topPrioritiesCount = Number(parsed.qlaActionTopPriorities);
+      }
+      if (parsed.movementGradeGap !== undefined && !isNaN(Number(parsed.movementGradeGap))) {
+        movementState.thresholds.gradeGap = Number(parsed.movementGradeGap);
+      }
+      if (parsed.movementThreeAway !== undefined && !isNaN(Number(parsed.movementThreeAway))) {
+        movementState.thresholds.threeOrMoreConcentration = Number(parsed.movementThreeAway);
+      }
+      if (parsed.movementSenGap !== undefined && !isNaN(Number(parsed.movementSenGap))) {
+        movementState.thresholds.senGap = Number(parsed.movementSenGap);
+      }
+      if (parsed.movementDisadvGap !== undefined && !isNaN(Number(parsed.movementDisadvGap))) {
+        movementState.thresholds.disadvantagedGap = Number(parsed.movementDisadvGap);
+      }
+      if (parsed.movementNoMockRate !== undefined && !isNaN(Number(parsed.movementNoMockRate))) {
+        movementState.thresholds.noMockRate = Number(parsed.movementNoMockRate);
       }
     }
   } catch (e) {
@@ -2680,9 +5998,28 @@ export {
   renderClassStudentGroupsBreakdown,
   renderTopPerformers,
   renderClassMismatchLists,
+  renderMovementAndBalanceSection,
+  movementState,
   initNewClassesHandlers,
   clearClassLists,
   setActiveGrouping,
   getActiveRecords,
-  processFile
+  processFile,
+  initQlaHandlers,
+  processQlaFile,
+  clearQlaData,
+  enableQlaCard,
+  disableQlaCard,
+  downloadQlaTemplate,
+  renderQlaPapersAndSkillsTab,
+  renderQlaQuestionsTab,
+  renderQlaClassesTab,
+  renderQlaStudentsTab,
+  renderQlaActionsTab,
+  qlaTabFilters,
+  qlaQuestionsState,
+  qlaClassesState,
+  qlaStudentsState,
+  qlaActionsState,
+  getDisplayStudentName
 };
