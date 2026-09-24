@@ -6,6 +6,8 @@
 
 import * as XLSX from 'xlsx';
 import { exportPowerPointPresentation } from './pptxExport.js';
+import { generateSuggestedActions } from './actions.js';
+import { PDF_SECTIONS, selectedPdfSections, setPdfSectionVisibility, livePdfFilterSummary, matrixPrintColumns, createStudentNameRedactor } from './pdfExport.js';
 import {
   computeHeadlines,
   filterRecords,
@@ -192,8 +194,13 @@ let movementState = {
 let selectedTopPerformersClass = null;
 
 let pdfExportOptions = {
-  headlines: true,
   overview: true,
+  suggested: true,
+  suggestedFull: false,
+  distance: true,
+  groups: true,
+  movement: true,
+  diagnostics: false,
   hideNames: false,
   orientation: 'portrait'
 };
@@ -5372,14 +5379,15 @@ async function processFile(file) {
  */
 function updatePrintCoverAndContents() {
   const ukDateToday = formatUKDate(new Date());
-  const activeRecords = getActiveRecords();
-  const headlines = computeHeadlines(activeRecords);
 
   const coverPeriod = document.getElementById('print-cover-period');
   if (coverPeriod) {
     const groupLabel = activeGrouping === 'new' ? 'New classes (Year 11)' : 'Current classes (Year 10)';
-    coverPeriod.textContent = currentFileName ? `Snapshot: ${currentFileName} · Grouping: ${groupLabel}` : 'Mock Snapshot Analysis';
+    coverPeriod.textContent = `Snapshot: ${currentSnapshotName || currentFileName || 'Mock Snapshot'} · Grouping: ${groupLabel}`;
   }
+
+  const coverFilters = document.getElementById('print-cover-filters');
+  if (coverFilters) coverFilters.textContent = livePdfFilterSummary(distFilters, selectedTopPerformersClass);
 
   const coverDate = document.getElementById('print-cover-date');
   if (coverDate) coverDate.textContent = ukDateToday;
@@ -5387,7 +5395,7 @@ function updatePrintCoverAndContents() {
   const coverPrivacy = document.getElementById('print-cover-privacy');
   if (coverPrivacy) {
     coverPrivacy.textContent = (pdfExportOptions.hideNames || isNameHidden)
-      ? 'Anonymised (Names hidden)'
+      ? 'Student initials and class'
       : 'Standard class identifiers';
   }
 
@@ -5398,43 +5406,191 @@ function updatePrintCoverAndContents() {
   const contentsList = document.getElementById('print-contents-list');
   if (contentsList) {
     contentsList.innerHTML = '';
-    const sections = [];
-    if (pdfExportOptions.headlines) sections.push('Headline Summary');
-    if (pdfExportOptions.overview) sections.push('Class Snapshot Overview');
-
-    sections.forEach(title => {
+    selectedPdfSections(pdfExportOptions, !!classListsData).forEach(section => {
       const li = document.createElement('li');
-      li.textContent = title;
+      li.textContent = section.label;
       contentsList.appendChild(li);
     });
   }
 }
 
+function renderPrintSuggestedActions() {
+  const top = document.getElementById('print-suggested-top');
+  const full = document.getElementById('print-suggested-full');
+  if (!top || !full) return;
+  top.replaceChildren();
+  full.replaceChildren();
+
+  const filteredRecords = filterDistanceRecords(getActiveRecords(), distFilters);
+  const result = generateSuggestedActions(filteredRecords, {
+    classListsData,
+    qlaPapers: currentQlaData?.papers || null,
+    rawSnapshotRecords: allRecords
+  });
+  const addAction = (parent, action) => {
+    const item = document.createElement('div');
+    item.className = 'print-action-item';
+    const title = document.createElement('strong');
+    title.textContent = `[${action.source}] ${action.title}`;
+    item.appendChild(title);
+    if (action.why) {
+      const why = document.createElement('p');
+      why.textContent = action.why;
+      item.appendChild(why);
+    }
+    parent.appendChild(item);
+  };
+
+  const topHeading = document.createElement('h3');
+  topHeading.textContent = 'Top 5 priorities';
+  top.appendChild(topHeading);
+  if (result.topPriorities.length === 0) {
+    const empty = document.createElement('p');
+    empty.textContent = 'No suggested actions at the current thresholds.';
+    top.appendChild(empty);
+  }
+  result.topPriorities.forEach(action => addAction(top, action));
+
+  if (pdfExportOptions.suggestedFull) {
+    const fullHeading = document.createElement('h3');
+    fullHeading.textContent = 'Full action list';
+    full.appendChild(fullHeading);
+    result.actions.forEach(action => addAction(full, action));
+  }
+}
+
+function preparePrintMovementMatrix() {
+  const container = document.getElementById('movement-matrix-container');
+  const table = container?.querySelector('.movement-matrix-table');
+  const columnCount = table?.tHead?.rows[0]?.cells.length || 0;
+  if (!table || columnCount <= 10) return () => {};
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'print-only';
+  const newClassCount = columnCount - 3;
+  for (const indices of matrixPrintColumns(columnCount)) {
+    const start = indices[1];
+    const end = indices[indices.length - 3];
+    const chunk = document.createElement('div');
+    chunk.className = 'print-matrix-chunk';
+    const heading = document.createElement('h4');
+    heading.textContent = `Movement matrix: new classes ${start}–${end} of ${newClassCount}`;
+    chunk.appendChild(heading);
+    const chunkTable = table.cloneNode(false);
+    for (const section of [table.tHead, table.tBodies[0]]) {
+      const copySection = section.cloneNode(false);
+      for (const row of section.rows) {
+        const copyRow = row.cloneNode(false);
+        indices.forEach(index => copyRow.appendChild(row.cells[index].cloneNode(true)));
+        copySection.appendChild(copyRow);
+      }
+      chunkTable.appendChild(copySection);
+    }
+    chunk.appendChild(chunkTable);
+    wrapper.appendChild(chunk);
+  }
+  container.classList.add('pdf-matrix-split');
+  container.appendChild(wrapper);
+  return () => {
+    wrapper.remove();
+    container.classList.remove('pdf-matrix-split');
+  };
+}
+
+function maskPrintStudentNames(sections) {
+  const records = [
+    ...allRecords,
+    ...(classListsData?.allNewClassStudents || []),
+    ...(classListsData?.inNewClassesNoMockResult || []),
+    ...(classListsData?.inSnapshotNotInNewClass || []),
+    ...(currentQlaData?.diagnostics?.unmatchedStudents || []),
+    ...(currentQlaData?.papers || []).flatMap(paper => paper.students || [])
+  ];
+  const redact = createStudentNameRedactor(records, currentPseudonymMaps?.studentMap);
+  const changed = [];
+  for (const section of sections) {
+    const root = document.getElementById(section.id);
+    if (!root) continue;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const masked = redact(node.nodeValue);
+      if (masked !== node.nodeValue) {
+        changed.push([node, node.nodeValue]);
+        node.nodeValue = masked;
+      }
+    }
+  }
+  return () => changed.forEach(([node, original]) => { node.nodeValue = original; });
+}
+
 function triggerPdfExport() {
   const modal = document.getElementById('export-pdf-modal');
+  if (!allRecords.length) {
+    const error = document.getElementById('export-pdf-error-msg');
+    if (error) {
+      error.textContent = 'Upload a snapshot before exporting.';
+      error.style.display = 'block';
+    }
+    return;
+  }
   if (modal) modal.style.display = 'none';
 
-  // Read options from UI
-  pdfExportOptions.headlines = !!document.getElementById('pdf-opt-headlines')?.checked;
-  pdfExportOptions.overview = !!document.getElementById('pdf-opt-overview')?.checked;
+  PDF_SECTIONS.forEach(section => {
+    pdfExportOptions[section.key] = !!document.getElementById(`pdf-opt-${section.key}`)?.checked;
+  });
+  pdfExportOptions.suggestedFull = !!document.getElementById('pdf-opt-suggested-full')?.checked;
   pdfExportOptions.hideNames = !!document.getElementById('pdf-opt-hide-names')?.checked;
-  
-  const isLandscape = document.getElementById('pdf-orient-landscape')?.checked;
-  pdfExportOptions.orientation = isLandscape ? 'landscape' : 'portrait';
 
-  // Set page orientation style if needed
+  const isLandscape = document.getElementById('pdf-orient-landscape')?.checked;
+  pdfExportOptions.orientation = (isLandscape || (pdfExportOptions.movement && classListsData)) ? 'landscape' : 'portrait';
+
+  const { selected, restore: restoreSections } = setPdfSectionVisibility(document, pdfExportOptions, !!classListsData);
+
+  const diagnostics = document.getElementById('diagnostics-panel');
+  const main = document.getElementById('dashboard-content');
+  const diagnosticsMarker = document.createComment('diagnostics print position');
+  if (diagnostics && main && pdfExportOptions.diagnostics) {
+    diagnostics.parentNode.insertBefore(diagnosticsMarker, diagnostics);
+    main.appendChild(diagnostics);
+  }
+
+  if (pdfExportOptions.suggested) renderPrintSuggestedActions();
+  const farthestNote = document.getElementById('print-farthest-note');
+  if (farthestNote) {
+    const total = getFarthestFromGrade5(filterDistanceRecords(getActiveRecords(), distFilters)).length;
+    farthestNote.textContent = `Showing the top ${Math.min(20, total)} of ${total} students farthest from grade 5.`;
+  }
+  const restoreMatrix = pdfExportOptions.movement && classListsData ? preparePrintMovementMatrix() : () => {};
+
   let pageStyle = document.getElementById('print-page-style');
   if (!pageStyle) {
     pageStyle = document.createElement('style');
     pageStyle.id = 'print-page-style';
     document.head.appendChild(pageStyle);
   }
-  pageStyle.textContent = `@page { size: A4 ${pdfExportOptions.orientation}; margin: 12mm 10mm; }`;
+  pageStyle.textContent = `@page { size: A4 ${pdfExportOptions.orientation}; margin: 14mm 12mm 18mm 12mm; }`;
 
   updatePrintCoverAndContents();
 
-  // Trigger system print
-  window.print();
+  const restoreNames = (pdfExportOptions.hideNames || isNameHidden)
+    ? maskPrintStudentNames([...selected, { id: 'print-cover-page' }, { id: 'print-contents-page' }])
+    : () => {};
+  const cleanup = () => {
+    restoreNames();
+    restoreMatrix();
+    if (diagnosticsMarker.parentNode) diagnosticsMarker.replaceWith(diagnostics);
+    restoreSections();
+  };
+  window.addEventListener('afterprint', cleanup, { once: true });
+
+  try {
+    window.print();
+  } catch (error) {
+    window.removeEventListener('afterprint', cleanup);
+    cleanup();
+    throw error;
+  }
 }
 
 /**
@@ -5555,6 +5711,13 @@ export function initApp() {
 
   if (btnExportPdf && exportPdfModal) {
     btnExportPdf.addEventListener('click', () => {
+      const movementOption = document.getElementById('pdf-movement-option');
+      if (movementOption) movementOption.style.display = classListsData ? 'flex' : 'none';
+      if (classListsData && document.getElementById('pdf-opt-movement')?.checked) {
+        document.getElementById('pdf-orient-landscape').checked = true;
+      }
+      const error = document.getElementById('export-pdf-error-msg');
+      if (error) error.style.display = 'none';
       exportPdfModal.style.display = 'flex';
     });
   }
@@ -5568,14 +5731,14 @@ export function initApp() {
 
   if (btnPdfSelectAll) {
     btnPdfSelectAll.addEventListener('click', () => {
-      const cbs = exportPdfModal?.querySelectorAll('input[type="checkbox"]');
+      const cbs = exportPdfModal?.querySelectorAll('.pdf-sections-checkbox-grid input[type="checkbox"]');
       cbs?.forEach(cb => { cb.checked = true; });
     });
   }
 
   if (btnPdfSelectNone) {
     btnPdfSelectNone.addEventListener('click', () => {
-      const cbs = exportPdfModal?.querySelectorAll('input[type="checkbox"]');
+      const cbs = exportPdfModal?.querySelectorAll('.pdf-sections-checkbox-grid input[type="checkbox"]');
       cbs?.forEach(cb => { cb.checked = false; });
     });
   }

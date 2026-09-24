@@ -332,6 +332,7 @@
         <span class="print-running-title">Class Snapshot Report · <span id="print-running-period">Mock Snapshot</span></span>
         <span class="print-running-school">Dixons Unity Academy</span>
       </div>
+      <div class="print-only print-page-footer">Contains pupil data. Handle under the trust data protection policy.</div>
 
       <!-- PRINT ONLY: 1. COVER PAGE -->
       <section class="print-only print-cover-page" id="print-cover-page">
@@ -368,10 +369,6 @@
           </div>
         </div>
 
-        <div class="print-cover-footer">
-          <div class="print-cover-footer-text">Confidential: contains student assessment data.</div>
-          <div class="print-cover-footer-brand">Dixons Unity Academy · Heads of Department</div>
-        </div>
       </section>
 
       <!-- PRINT ONLY: 2. CONTENTS PAGE -->
@@ -382,8 +379,7 @@
           <div class="print-contents-subtitle">Included sections in this report</div>
         </div>
         <ol class="print-contents-list" id="print-contents-list">
-          <li>Headline Summary</li>
-          <li>Class Snapshot Overview</li>
+          <li>Overview and class comparison</li>
         </ol>
         <div class="print-contents-footer">
           <span>Class Snapshot Report</span>
@@ -707,6 +703,12 @@
 
       </section>
 
+      <section id="print-suggested-actions" class="print-only section-block" aria-label="Suggested actions">
+        <h2>Suggested actions</h2>
+        <div id="print-suggested-top"></div>
+        <div id="print-suggested-full"></div>
+      </section>
+
       <!-- SECTION 2: Distance from grade 5 -->
       <section id="section-distance-grade-5" class="section-block" style="display: none;" aria-label="Distance from grade 5">
 
@@ -870,6 +872,7 @@
               </tbody>
             </table>
           </div>
+          <p class="print-only" id="print-farthest-note"></p>
         </div>
 
         <!-- 3. "Closest to grade 5" (All Grade 4 Students, by Class) -->
@@ -1737,19 +1740,27 @@
             <span style="font-weight: 700; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Sections to Include</span>
             <div style="display: flex; gap: 8px;">
               <button type="button" class="btn-secondary-action" id="btn-pdf-select-all" style="padding: 3px 10px; font-size: 12px;">Select all</button>
-              <button type="button" class="btn-secondary-action" id="btn-pdf-select-none" style="padding: 3px 10px; font-size: 12px;">Select none</button>
+              <button type="button" class="btn-secondary-action" id="btn-pdf-select-none" style="padding: 3px 10px; font-size: 12px;">Clear all</button>
             </div>
           </div>
 
           <div class="pdf-sections-checkbox-grid" style="display: flex; flex-direction: column; gap: 7px; margin-bottom: 18px;">
             <label class="pdf-checkbox-label">
-              <input type="checkbox" id="pdf-opt-headlines" checked />
-              <span>Headline summary</span>
+              <input type="checkbox" id="pdf-opt-overview" checked />
+              <span>Overview and class comparison</span>
             </label>
             <label class="pdf-checkbox-label">
-              <input type="checkbox" id="pdf-opt-overview" checked />
-              <span>Class snapshot overview</span>
+              <input type="checkbox" id="pdf-opt-suggested" checked />
+              <span>Suggested actions</span>
             </label>
+            <label class="pdf-checkbox-label" style="margin-left: 22px;">
+              <input type="checkbox" id="pdf-opt-suggested-full" />
+              <span>Include full list</span>
+            </label>
+            <label class="pdf-checkbox-label"><input type="checkbox" id="pdf-opt-distance" checked /><span>Distance from grade 5</span></label>
+            <label class="pdf-checkbox-label"><input type="checkbox" id="pdf-opt-groups" checked /><span>Student groups</span></label>
+            <label class="pdf-checkbox-label" id="pdf-movement-option" style="display: none;"><input type="checkbox" id="pdf-opt-movement" checked /><span>Movement and class balance</span></label>
+            <label class="pdf-checkbox-label"><input type="checkbox" id="pdf-opt-diagnostics" /><span>Diagnostics</span></label>
           </div>
 
           <div style="border-top: 1px solid var(--border-color); padding-top: 12px; margin-bottom: 16px;">
@@ -1759,7 +1770,7 @@
               <span>Hide names</span>
             </label>
             <div style="font-size: 12px; color: var(--text-muted); margin-left: 24px; margin-top: 2px;">
-              Replaces student and teacher names with Student 1, 2, 3 and Teacher A, B, C.
+              Prints student initials and class in place of full names.
             </div>
           </div>
 
@@ -1775,6 +1786,7 @@
                 <span>Landscape</span>
               </label>
             </div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Movement and class balance prints in landscape to fit the matrix.</div>
           </div>
 
           <div id="export-pdf-error-msg" style="display: none; background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; border-radius: 4px; padding: 8px 12px; margin-top: 14px; font-size: 13px;"></div>

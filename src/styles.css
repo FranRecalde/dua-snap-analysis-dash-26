@@ -2395,6 +2395,96 @@ body {
     display: none !important;
   }
 
+  #dashboard-empty-card,
+  #section-class-mismatch-lists,
+  #section-qla-insights,
+  #view-switch-container,
+  #movement-cell-drilldown-drawer {
+    display: none !important;
+  }
+
+  .print-page-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    font-size: 8pt;
+    color: #4b5563;
+    border-top: 1px solid #d1d5db;
+    padding-top: 4px;
+    background: white;
+  }
+
+  #section-overview,
+  #print-suggested-actions,
+  #section-distance-grade-5,
+  #section-student-groups,
+  #section-movement-balance,
+  #diagnostics-panel {
+    break-before: page;
+  }
+
+  #diagnostics-panel .diagnostic-card {
+    display: block !important;
+  }
+
+  table thead {
+    display: table-header-group !important;
+  }
+
+  table tr {
+    break-inside: avoid !important;
+  }
+
+  #tbody-farthest tr:nth-child(n+21) {
+    display: none !important;
+  }
+
+  .movement-matrix-scroll-container {
+    overflow: visible !important;
+    max-width: 100% !important;
+  }
+
+  .movement-matrix-table,
+  .comparison-table {
+    width: 100% !important;
+    table-layout: fixed;
+  }
+
+  .movement-matrix-table th,
+  .movement-matrix-table td,
+  .comparison-table th,
+  .comparison-table td {
+    overflow-wrap: anywhere;
+    white-space: normal !important;
+  }
+
+  .movement-matrix-table th,
+  .movement-matrix-table td {
+    min-width: 0 !important;
+    padding: 4px !important;
+    font-size: 7pt !important;
+    position: static !important;
+  }
+
+  .print-action-item {
+    border-bottom: 1px solid #e5e7eb;
+    padding: 7px 0;
+    break-inside: avoid;
+  }
+
+  .print-action-item p {
+    margin: 3px 0 0;
+  }
+
+  .pdf-matrix-split > .movement-matrix-table {
+    display: none !important;
+  }
+
+  .print-matrix-chunk + .print-matrix-chunk {
+    break-before: page;
+  }
+
   /* Never split cards, rows, or elements */
   tr,
   .stat-card,
@@ -2615,6 +2705,13 @@ body {
     color: #4b5563;
     line-height: 1.45;
     margin: 0;
+  }
+
+  #movement-matrix-card,
+  #new-class-profile-card,
+  .table-card-wrapper {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
   }
 }
 
