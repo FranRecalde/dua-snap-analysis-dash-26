@@ -7,6 +7,7 @@
 import pptxgen from 'pptxgenjs';
 import {
   computeHeadlines, calculateClassBreakdown, calculateDistanceBreakdownByClass,
+  getFarthestFromGrade5ByClass,
   calculateStudentGroupsBreakdown
 } from './stats.js';
 import { calculateMovementMatrix, calculateNewClassProfiles, calculateBalanceFlags } from './movementStats.js';
@@ -395,6 +396,14 @@ export function buildPowerPointPresentation({
     ['Class', 'Sat', '5+', '1 away', '2 away', '3+ away'],
     distance.map(c => [c.className, c.satCount, c.countAtOrAbove5, c.countOneAway, c.countTwoAway, c.countThreeOrMoreAway].map(String)),
     [2.4, 1.2, 1.2, 1.2, 1.2, 1.2], 10, 'Student counts only');
+
+  const farthestByClass = getFarthestFromGrade5ByClass(distanceRecords);
+  addPagedTable(pres, 'Farthest from grade 5 by class',
+    ['Class', '2+ grades away', '3+ grades away'],
+    farthestByClass.map(group => [
+      redact(group.className), String(group.students.length),
+      String(group.students.filter(student => student.gap >= 3).length)
+    ]), [3.4, 2.5, 2.5], 10, 'Student counts only');
 
   const groupCategories = new Set(['SEN Status', 'Disadvantage', 'Gender', 'EAL']);
   const groups = calculateStudentGroupsBreakdown(filteredRecords)

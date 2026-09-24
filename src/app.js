@@ -28,6 +28,7 @@ import {
   calculateDistanceBreakdownByClass,
   filterDistanceRecords,
   getFarthestFromGrade5,
+  getFarthestFromGrade5ByClass,
   getClosestToGrade5ByClass,
   getEstimate5PlusShortfall,
   calculateGroupMetrics,
@@ -126,6 +127,7 @@ let distFilters = {
   disadvantaged: 'ALL',
   band: 'ALL'
 };
+let groupFarthestByClass = false;
 
 // QLA Papers and Skills Tab State
 let qlaTabFilters = {
@@ -1340,9 +1342,12 @@ function renderDistanceClassTable(records) {
 /**
  * Component 2: Farthest from grade 5 (sorted by gap descending)
  */
-function renderFarthestFromGrade5(records) {
+function renderFarthestFromGrade5(records, groupedView = groupFarthestByClass) {
   const tbody = document.getElementById('tbody-farthest');
   const countBadge = document.getElementById('farthest-count-badge');
+  const cohortTable = document.getElementById('farthest-cohort-table');
+  const groupedContainer = document.getElementById('farthest-by-class');
+  const groupButton = document.getElementById('btn-group-farthest');
   if (!tbody) return;
 
   const farthestList = getFarthestFromGrade5(records);
@@ -1350,12 +1355,7 @@ function renderFarthestFromGrade5(records) {
     countBadge.textContent = `${farthestList.length} student${farthestList.length === 1 ? '' : 's'}`;
   }
 
-  if (farthestList.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" class="empty-state-banner">No sat students match the active filter criteria.</td></tr>`;
-    return;
-  }
-
-  const rowsHtml = farthestList.map((s, idx) => {
+  const renderRow = (s, idx) => {
     const studentName = getDisplayStudentName(s, isNameHidden, idx + 1);
     const estDisplay = s.estimate !== null ? s.estimate.toFixed(1) : '-';
 
@@ -1371,9 +1371,37 @@ function renderFarthestFromGrade5(records) {
         <td>${renderAttendanceBadge(s.attendance)}</td>
       </tr>
     `;
-  }).join('');
+  };
 
-  tbody.innerHTML = rowsHtml;
+  tbody.innerHTML = farthestList.length
+    ? farthestList.map(renderRow).join('')
+    : `<tr><td colspan="8" class="empty-state-banner">No sat students match the active filter criteria.</td></tr>`;
+
+  if (groupedContainer) {
+    const grouped = getFarthestFromGrade5ByClass(records);
+    groupedContainer.innerHTML = `
+      <h3>Farthest from grade 5 by class</h3>
+      ${grouped.map(({ className, students }) => `
+        <div class="closest-class-card">
+          <div class="closest-class-header">
+            <strong>Class ${escapeHtml(className)}</strong>
+            <span class="closest-class-count-tag">${students.length} student${students.length === 1 ? '' : 's'} two or more grades away</span>
+          </div>
+          ${students.length ? `
+            <div class="table-responsive">
+              <table class="comparison-table student-detail-table">
+                <thead><tr><th>Name</th><th>Class</th><th>Result</th><th>Estimate</th><th>Gap</th><th>SEN</th><th>Disadvantaged</th><th>Attendance</th></tr></thead>
+                <tbody>${students.map(renderRow).join('')}</tbody>
+              </table>
+            </div>
+          ` : '<p>No students two or more grades from grade 5.</p>'}
+        </div>
+      `).join('') || '<p>No classes match the active filters.</p>'}
+    `;
+    groupedContainer.style.display = groupedView ? 'block' : 'none';
+  }
+  if (cohortTable) cohortTable.style.display = groupedView ? 'none' : 'block';
+  if (groupButton) groupButton.setAttribute('aria-pressed', String(groupedView));
 }
 
 /**
@@ -6205,6 +6233,10 @@ export function initApp() {
   }
 
   // 8. Distance from Grade 5 Filter Controls
+  document.getElementById('btn-group-farthest')?.addEventListener('click', () => {
+    groupFarthestByClass = !groupFarthestByClass;
+    renderDistanceSection(false);
+  });
   const distClassSelect = document.getElementById('dist-filter-class');
   if (distClassSelect) {
     distClassSelect.addEventListener('change', (e) => {
@@ -6395,6 +6427,7 @@ export {
   renderClassComparisonTable,
   renderCharts,
   renderDistanceSection,
+  renderFarthestFromGrade5,
   renderStudentGroupsSection,
   renderCohortStudentGroups,
   renderClassStudentGroupsBreakdown,

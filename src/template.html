@@ -843,10 +843,13 @@
                 Student list sorted by gap to Grade 5, largest gap first (U = gap 5, grade 1 = gap 4, grade 2 = gap 3).
               </div>
             </div>
-            <div id="farthest-count-badge" class="table-count-tag">0 students</div>
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <button type="button" id="btn-group-farthest" class="btn-secondary-action no-print" aria-pressed="false">Group by class</button>
+              <div id="farthest-count-badge" class="table-count-tag">0 students</div>
+            </div>
           </div>
 
-          <div class="table-responsive">
+          <div class="table-responsive" id="farthest-cohort-table">
             <table class="comparison-table student-detail-table" id="table-farthest">
               <thead>
                 <tr>
@@ -866,6 +869,7 @@
             </table>
           </div>
           <p class="print-only" id="print-farthest-note"></p>
+          <div id="farthest-by-class" class="print-only closest-classes-list"></div>
         </div>
 
         <!-- 3. "Closest to grade 5" (All Grade 4 Students, by Class) -->

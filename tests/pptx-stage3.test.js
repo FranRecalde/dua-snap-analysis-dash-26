@@ -78,4 +78,18 @@ describe('PowerPoint stage 3 snapshot export', () => {
     expect(content).not.toMatch(/First\d+|Surname\d+/);
     expect(content).toContain('C.R., 10 Sp1');
   });
+
+  it('adds count-only class slides for students two and three grades away', () => {
+    const pres = buildPowerPointPresentation({
+      filteredRecords: records,
+      distanceRecords: records,
+      options: { hideNames: true }
+    });
+    const slide = pres._slides.find(item => JSON.stringify(item._slideObjects).includes('Farthest from grade 5 by class'));
+    const content = JSON.stringify(slide._slideObjects);
+    expect(content).toContain('2+ grades away');
+    expect(content).toContain('3+ grades away');
+    expect(content).toContain('10 Sp1');
+    expect(content).not.toMatch(/Rivera|Cara|First\d+|Surname\d+/);
+  });
 });

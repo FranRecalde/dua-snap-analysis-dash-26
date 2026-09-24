@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { renderFarthestFromGrade5 } from '../src/app.js';
 import {
   DISTANCE_BANDS,
   calculateStudentGap,
@@ -9,6 +10,7 @@ import {
   calculateDistanceBreakdownByClass,
   filterDistanceRecords,
   getFarthestFromGrade5,
+  getFarthestFromGrade5ByClass,
   getClosestToGrade5ByClass,
   getEstimate5PlusShortfall
 } from '../src/stats.js';
@@ -202,6 +204,42 @@ describe('Distance from grade 5 UI and Template Structure', () => {
     expect(farthest[0].gap).toBe(5);
     expect(farthest[1].surname).toBe('Patel');
     expect(farthest[1].gap).toBe(2);
+  });
+
+  it('groups all students two or more grades away by class and keeps empty classes', () => {
+    const groups = getFarthestFromGrade5ByClass(mockRecords);
+    expect(groups.map(group => group.className)).toEqual(['10 Sp1', '10 Sp2']);
+    expect(groups[0].students).toEqual([]);
+    expect(groups[1].students.map(student => student.surname)).toEqual(['Doyle', 'Patel']);
+    expect(groups[1].students.map(student => student.gap)).toEqual([5, 2]);
+  });
+
+  it('offers a class toggle and a grouped screen and print view', () => {
+    expect(templateHtml).toContain('id="btn-group-farthest"');
+    expect(templateHtml).toContain('aria-pressed="false">Group by class');
+    expect(templateHtml).toContain('id="farthest-by-class"');
+    expect(templateHtml).toContain('id="farthest-cohort-table"');
+
+    const elements = Object.fromEntries([
+      'tbody-farthest', 'farthest-count-badge', 'farthest-cohort-table',
+      'farthest-by-class', 'btn-group-farthest'
+    ].map(id => [id, { innerHTML: '', style: {}, setAttribute(key, value) { this[key] = value; } }]));
+    const originalDocument = globalThis.document;
+    globalThis.document = { getElementById: id => elements[id] || null };
+    try {
+      renderFarthestFromGrade5(mockRecords, false);
+      expect(elements['farthest-cohort-table'].style.display).toBe('block');
+      expect(elements['farthest-by-class'].style.display).toBe('none');
+      renderFarthestFromGrade5(mockRecords, true);
+      const groupedHtml = elements['farthest-by-class'].innerHTML;
+      expect(elements['farthest-cohort-table'].style.display).toBe('none');
+      expect(elements['farthest-by-class'].style.display).toBe('block');
+      expect(elements['btn-group-farthest']['aria-pressed']).toBe('true');
+      expect(groupedHtml).toContain('No students two or more grades from grade 5.');
+      expect(groupedHtml.indexOf('Doyle, Ben')).toBeLessThan(groupedHtml.indexOf('Patel, Dev'));
+    } finally {
+      globalThis.document = originalDocument;
+    }
   });
 
   it('correctly groups Closest to Grade 5 (all Grade 4 students, by class)', () => {

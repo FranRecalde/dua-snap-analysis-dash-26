@@ -714,6 +714,17 @@ export function getFarthestFromGrade5(records) {
   });
 }
 
+/** Every active class, with all students at least two grades below grade 5. */
+export function getFarthestFromGrade5ByClass(records) {
+  const classNames = [...new Set(records.map(record => record.className || 'Unassigned'))]
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const farthest = getFarthestFromGrade5(records).filter(student => student.gap >= 2);
+  return classNames.map(className => ({
+    className,
+    students: farthest.filter(student => (student.className || 'Unassigned') === className)
+  }));
+}
+
 /**
  * Closest to grade 5:
  * All grade 4 students, grouped by class.

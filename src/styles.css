@@ -2521,6 +2521,15 @@ body {
     display: none !important;
   }
 
+  #farthest-cohort-table,
+  #farthest-by-class {
+    display: block !important;
+  }
+
+  #farthest-by-class {
+    break-before: page;
+  }
+
   .movement-matrix-scroll-container {
     overflow: visible !important;
     max-width: 100% !important;
