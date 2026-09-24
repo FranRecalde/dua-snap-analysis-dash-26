@@ -285,4 +285,56 @@ describe('QLA Workbook Parser', () => {
     expect(single.surname).toBe('SingleNameOnly');
     expect(single.firstName).toBe('');
   });
+
+  it('corrects one question maximum when the sheet total explains an overscore', () => {
+    const rows = [
+      ['Student Name', 'Class', 'Q1', 'Q2', 'TOTAL MARKS'],
+      ['Marks per Q', '', 5, 5, 12],
+      ['Invented, Alex', '10SP1', 7, 4, 11]
+    ];
+    const result = parseQlaWorkbook([{ name: 'Reading F', rows }]);
+    expect(result.papers[0].questions.map(q => q.maxMarks)).toEqual([7, 5]);
+    expect(result.papers[0].students[0]).toMatchObject({ marks: { q1: 7, q2: 4 }, total: 11, pct: 91.7 });
+    expect(result.diagnostics.warnings.filter(w => w.includes('Corrected question maximum'))).toHaveLength(1);
+    expect(result.diagnostics.warnings.some(w => w.includes('differs from sheet TOTAL MARKS'))).toBe(false);
+  });
+
+  it('uses three overscores to correct a question maximum when the sheet total cannot', () => {
+    const rows = [
+      ['Student Name', 'Class', 'Q1', 'PERCENTAGE'],
+      ['Marks per Q', '', 5, ''],
+      ['Invented, Alex', '10SP1', 6, ''],
+      ['Invented, Bea', '10SP1', 7, ''],
+      ['Invented, Cal', '10SP1', 6, '']
+    ];
+    const result = parseQlaWorkbook([{ name: 'Listening F', rows }]);
+    expect(result.papers[0].questions[0].maxMarks).toBe(7);
+    expect(result.papers[0].students.map(s => s.total)).toEqual([6, 7, 6]);
+    expect(result.diagnostics.warnings.filter(w => w.includes('Corrected question maximum'))).toHaveLength(1);
+  });
+
+  it('keeps one or two overscores invalid without evidence to correct the maximum', () => {
+    const rows = [
+      ['Student Name', 'Class', 'Q1', 'TOTAL MARKS'],
+      ['Marks per Q', '', 5, 5],
+      ['Invented, Alex', '10SP1', 6, 6],
+      ['Invented, Bea', '10SP1', 7, 7]
+    ];
+    const result = parseQlaWorkbook([{ name: 'Writing H', rows }]);
+    expect(result.papers[0].questions[0].maxMarks).toBe(5);
+    expect(result.papers[0].students.map(s => s.marks.q1)).toEqual([null, null]);
+    expect(result.diagnostics.warnings.filter(w => w.includes('exceeds question maximum'))).toHaveLength(2);
+    expect(result.diagnostics.warnings.some(w => w.includes('Corrected question maximum'))).toBe(false);
+  });
+
+  it('retains a genuine sheet total mismatch when more than one question overscores', () => {
+    const rows = [
+      ['Student Name', 'Class', 'Q1', 'Q2', 'TOTAL MARKS'],
+      ['Marks per Q', '', 5, 5, 12],
+      ['Invented, Alex', '10SP1', 6, 6, 12]
+    ];
+    const result = parseQlaWorkbook([{ name: 'Reading H', rows }]);
+    expect(result.papers[0].questions.map(q => q.maxMarks)).toEqual([5, 5]);
+    expect(result.diagnostics.warnings.some(w => w.includes('Calculated totalMax (10) differs'))).toBe(true);
+  });
 });

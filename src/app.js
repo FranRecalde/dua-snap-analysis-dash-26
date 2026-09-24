@@ -6,6 +6,7 @@
 
 import * as XLSX from 'xlsx';
 import { exportPowerPointPresentation } from './pptxExport.js';
+import { groupQlaWarnings } from './qlaWarnings.js';
 import { generateSuggestedActions } from './actions.js';
 import { PDF_SECTIONS, selectedPdfSections, setPdfSectionVisibility, livePdfFilterSummary, describeActiveFilters, matrixPrintColumns, createStudentNameRedactor, qlaPrintClasses, qlaPrintTiers, heatmapPrintColumns } from './pdfExport.js';
 import {
@@ -553,15 +554,21 @@ function renderDiagnostics(diagnostics, fileName, snapshotName) {
 
     let warningsHtml = '';
     if (qDiag.warnings && qDiag.warnings.length > 0) {
-      const items = qDiag.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('');
+      const groups = groupQlaWarnings(qDiag.warnings, currentQlaData.papers, isNameHidden);
+      const items = groups.map(group => `
+        <details style="margin-top: 8px;">
+          <summary>${escapeHtml(group.sheetName)} (${group.messages.length}) — Show details</summary>
+          <ul class="diag-list-items">
+            ${group.messages.map(message => `<li>${escapeHtml(message)}</li>`).join('')}
+          </ul>
+        </details>
+      `).join('');
       warningsHtml = `
         <div class="diag-list-card" style="border-left: 4px solid #dc2626; margin-top: 14px;">
           <div class="diag-list-title" style="color: #991b1b;">
             <span>⚠️</span> QLA Parser Warnings (${qDiag.warnings.length})
           </div>
-          <ul class="diag-list-items">
-            ${items}
-          </ul>
+          ${items}
         </div>
       `;
     }
@@ -6127,6 +6134,7 @@ export function initApp() {
       renderQlaClassesTab();
       renderQlaStudentsTab();
       renderQlaActionsTab();
+      if (currentDiagnostics) renderDiagnostics(currentDiagnostics, currentFileName, currentSnapshotName);
       closeSettingsModal();
       showToast('Settings saved.');
     });
@@ -6152,6 +6160,7 @@ export function initApp() {
       renderQlaClassesTab();
       renderQlaStudentsTab();
       renderQlaActionsTab();
+      if (currentDiagnostics) renderDiagnostics(currentDiagnostics, currentFileName, currentSnapshotName);
       showToast(isNameHidden ? 'Student names hidden (privacy mode on).' : 'Student names visible.');
     });
   }

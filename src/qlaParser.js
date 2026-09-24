@@ -186,6 +186,7 @@ export function parseQlaWorkbook(sheets, fileName = '') {
   }
 
   const warnings = [];
+  const reconciliationNotices = [];
   const papers = [];
   let assessmentTitle = '';
 
@@ -337,16 +338,42 @@ export function parseQlaWorkbook(sheets, fileName = '') {
       });
     }
 
-    // 7. Calculate totalMax and validate against sheet's TOTAL MARKS
-    const totalMax = questions.reduce((sum, q) => sum + q.maxMarks, 0);
-    if (totalMarksColIndex !== -1) {
-      const rawSheetTotalMax = maxMarksRow[totalMarksColIndex];
-      if (rawSheetTotalMax !== undefined && rawSheetTotalMax !== null && cleanText(rawSheetTotalMax) !== '') {
-        const sheetTotalMax = Number(cleanText(rawSheetTotalMax));
-        if (!isNaN(sheetTotalMax) && sheetTotalMax !== totalMax) {
-          warnings.push(`[${sheetName}] Calculated totalMax (${totalMax}) differs from sheet TOTAL MARKS in max marks row (${sheetTotalMax}).`);
-        }
+    // 7. Reconcile a misstated question maximum before validating student marks.
+    const overscores = questions.map(q => ({ question: q, marks: [] }));
+    for (let r = maxMarksRowIndex + 1; r < rows.length; r++) {
+      const row = rows[r];
+      if (!Array.isArray(row) || !/[a-zA-Z]/.test(cleanText(row[nameColIndex]))) continue;
+      if (questions.some(q => cleanText(row[q.colIdx]).toUpperCase() === 'A')) continue;
+      overscores.forEach(({ question, marks }) => {
+        const cell = cleanText(row[question.colIdx]);
+        const mark = Number(cell);
+        if (cell && Number.isFinite(mark) && mark > question.maxMarks) marks.push(mark);
+      });
+    }
+
+    const statedTotal = cleanText(maxMarksRow[totalMarksColIndex]);
+    const sheetTotalMax = statedTotal && Number.isFinite(Number(statedTotal)) ? Number(statedTotal) : null;
+    const statedSum = questions.reduce((sum, q) => sum + q.maxMarks, 0);
+    const affectedQuestions = overscores.filter(entry => entry.marks.length > 0);
+    if (sheetTotalMax !== null && sheetTotalMax > statedSum && affectedQuestions.length === 1) {
+      const { question, marks } = affectedQuestions[0];
+      const corrected = question.maxMarks + sheetTotalMax - statedSum;
+      if (Math.max(...marks) <= corrected) {
+        reconciliationNotices.push(`[${sheetName}] Corrected question maximum for "${question.label}" from ${question.maxMarks} to ${corrected} using sheet TOTAL MARKS.`);
+        question.maxMarks = corrected;
       }
+    }
+    overscores.forEach(({ question, marks }) => {
+      if (marks.length >= 3 && Math.max(...marks) > question.maxMarks) {
+        const corrected = Math.max(...marks);
+        reconciliationNotices.push(`[${sheetName}] Corrected question maximum for "${question.label}" from ${question.maxMarks} to ${corrected} using ${marks.length} student marks.`);
+        question.maxMarks = corrected;
+      }
+    });
+
+    const totalMax = questions.reduce((sum, q) => sum + q.maxMarks, 0);
+    if (sheetTotalMax !== null && sheetTotalMax !== totalMax) {
+      warnings.push(`[${sheetName}] Calculated totalMax (${totalMax}) differs from sheet TOTAL MARKS in max marks row (${sheetTotalMax}).`);
     }
 
     // 8. Parse student rows
@@ -516,7 +543,7 @@ export function parseQlaWorkbook(sheets, fileName = '') {
     assessmentTitle,
     papers,
     diagnostics: {
-      warnings,
+      warnings: [...reconciliationNotices, ...warnings],
       counts: {
         papers: papers.length,
         students: totalStudents,
